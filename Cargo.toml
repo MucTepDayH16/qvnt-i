@@ -1,5 +1,5 @@
 [package]
-name        = "qvnt"
+name        = "qvnt-i"
 version     = "0.4.2"
 description = "Advanced quantum computation simulator."
 keywords    = ["theoretical", "quantum-computing", "quantum-simulator", "quantum", "qubits"]
@@ -16,11 +16,3 @@ clap        = { version = "3.1.8", features = ["derive"] }
 rustyline   = "9.1.2"
 qvnt        = { version = "0.4.2", features = ["cpu", "interpreter"] }
 meval       = "0.2.0"
-
-[dev-dependencies]
-criterion   = "0.3.5"
-glob        = "0.3.0"
-
-[[bench]]
-name                = "interpreter"
-harness             = false
