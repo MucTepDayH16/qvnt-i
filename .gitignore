@@ -1,0 +1,13 @@
+/target
+
+*.xlsx
+
+.venv
+.vscode
+.idea
+.history
+
+__pycache__
+media
+
+.DS_Store

@@ -1,0 +1,26 @@
+[package]
+name        = "qvnt"
+version     = "0.4.2"
+description = "Advanced quantum computation simulator."
+keywords    = ["theoretical", "quantum-computing", "quantum-simulator", "quantum", "qubits"]
+categories  = ["concurrency", "simulation", "mathematics", "science"]
+
+authors     = ["Denis Drozhzhin <denisdrozhzhin1999@gmail.com>"]
+edition     = "2018"
+repository  = "https://github.com/MucTepDayH16/qvnt-i/"
+readme      = "README.md"
+license     = "MIT OR Apache-2.0"
+
+[dependencies]
+clap        = { version = "3.1.8", features = ["derive"] }
+rustyline   = "9.1.2"
+qvnt        = { version = "0.4.2", features = ["cpu", "interpreter"] }
+meval       = "0.2.0"
+
+[dev-dependencies]
+criterion   = "0.3.5"
+glob        = "0.3.0"
+
+[[bench]]
+name                = "interpreter"
+harness             = false
