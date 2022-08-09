@@ -35,20 +35,17 @@ USAGE:
     : [COMMANDS...]
 
 COMMANDS:
+    load FILE   Load state from FILE according to QASM language script
+    tag TAGCMD  Interact with tags, more about by `tag ?`
+    go|g        Start modulating quantum computer
     loop|l N    Repeat following commands N time
-    tag TAG     Create TAG with current state
-    to TAG      Swap current state to TAG's state
-    tags        Show the list of previously created tags
-    quit|q      Exit interpreter
     class|c     Show state of classical registers
     polar       Show state of quantum registers in polar form
     prob|p      Show state of quantum registers in probability form
     ops|o       Snow current quantum operations queue
-    go|g        Start modulating quantum computer
-    reset|r     Clear current state
     names|n     Show aliases for quantum and classical bits
-    load FILE   Load state from FILE according to QASM language script
     help|h|?    Show this reference
+    quit|q      Exit interpreter
 ";
 
 #[derive(Clone, Debug, PartialEq)]
