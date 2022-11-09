@@ -143,9 +143,9 @@ impl std::error::Error for Error {}
 pub const HELP: &str = "QVNT Interpreter Tag command
 
 USAGE:
-    :tag [SUBCOMMANDS...]
+    :tag [TAGCMD...]
 
-SUBCOMMANDS:
+TAGCMD:
     ls          Show the list of previously created tags
     mk TAG      Create TAG with current state
     ch TAG      Swap current state to TAG's state
