@@ -9,7 +9,7 @@ pub trait ToOwnedError: std::error::Error {
 pub mod ast {
     use super::*;
 
-    #[derive(Debug, PartialEq, Clone)]
+    #[derive(Debug, PartialEq, Eq, Clone)]
     pub enum OwnedError {
         EmptySource,
         ParseError(String),
@@ -133,7 +133,7 @@ pub mod int {
 pub mod macros {
     use super::*;
 
-    #[derive(Debug, PartialEq, Clone)]
+    #[derive(Debug, PartialEq, Eq, Clone)]
     pub enum OwnedError {
         DisallowedNodeInMacro(String),
         DisallowedRegister(String, usize),

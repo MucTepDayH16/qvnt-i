@@ -1,6 +1,7 @@
 use std::{fmt, path::PathBuf, str::FromStr};
 
-#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     UnknownCommand(String),
     UnspecifiedPath,
@@ -48,7 +49,7 @@ COMMANDS:
     quit|q      Exit interpreter
 ";
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     Loop(usize),
     Tags(crate::int_tree::Command),
@@ -63,7 +64,7 @@ pub enum Command {
     Quit,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Line {
     Commands(Vec<Command>),
     Qasm,
@@ -134,7 +135,7 @@ impl FromStr for Line {
     type Err = Error;
 
     fn from_str(source: &str) -> Result<Self, Error> {
-        if let Some((_, ':')) = source.char_indices().nth(0) {
+        if let Some((_, ':')) = source.char_indices().next() {
             let source = source.split_at(1).1.split_ascii_whitespace();
             Line::parse_command(source).map(Line::Commands)
         } else {

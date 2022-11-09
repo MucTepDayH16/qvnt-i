@@ -96,11 +96,11 @@ where
 
         let mut is_presented = false;
         for tags in self.map.iter() {
-            if &**tags.0 == &tag {
+            if **tags.0 == tag {
                 is_presented = true;
             }
             if let Some(par_tag) = Weak::upgrade(&tags.1 .0) {
-                if &**par_tag == &tag {
+                if *par_tag == tag {
                     return RemoveStatus::IsParent;
                 }
             }
@@ -117,7 +117,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     UnknownTagCmd(String),
     UnspecifiedTag,
@@ -154,7 +154,7 @@ TAGCMD:
     help|h|?    Show this reference
 ";
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     List,
     Create(String),

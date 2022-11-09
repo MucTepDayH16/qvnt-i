@@ -13,7 +13,7 @@ pub fn leak_string<'t>(s: String) -> &'t str {
     s
 }
 
-pub const ROOT_TAG: &'static str = ".";
+pub const ROOT_TAG: &str = ".";
 
 pub(crate) struct Program<'t> {
     pub dbg: bool,
