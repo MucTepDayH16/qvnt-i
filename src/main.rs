@@ -1,5 +1,3 @@
-#![allow(clippy::enum_variant_names)]
-
 mod cli;
 mod int_tree;
 mod lines;

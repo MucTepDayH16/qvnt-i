@@ -18,6 +18,6 @@ pub struct CliArgs {
 
 impl CliArgs {
     pub fn new() -> ProgramResult<Self> {
-        <Self as clap::StructOpt>::try_parse().map_err(ProgramError::ClapError)
+        <Self as clap::StructOpt>::try_parse().map_err(ProgramError::Clap)
     }
 }

@@ -125,7 +125,7 @@ pub enum Error {
 
 impl From<Error> for crate::lines::Error {
     fn from(e: Error) -> Self {
-        Self::TagError(e)
+        Self::Tag(e)
     }
 }
 

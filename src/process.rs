@@ -5,16 +5,42 @@ use qvnt::qasm::{Ast, Int, Sym};
 use crate::{
     int_tree::IntTree,
     lines::{self, Command, Line},
-    utils::owned_errors::ToOwnedError,
+    utils::{owned_errors, owned_errors::ToOwnedError},
 };
 
 #[derive(Debug)]
 pub enum Error {
+    Io(std::io::Error),
+    Lines(lines::Error),
+    Int(owned_errors::int::OwnedError),
+    Ast(owned_errors::ast::OwnedError),
     Inner,
     #[allow(dead_code)]
     Unimplemented,
-    Dyn(Box<dyn std::error::Error>),
-    Quit,
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Self::Io(err)
+    }
+}
+
+impl From<lines::Error> for Error {
+    fn from(err: lines::Error) -> Self {
+        Self::Lines(err)
+    }
+}
+
+impl<'t> From<qvnt::qasm::int::Error<'t>> for Error {
+    fn from(err: qvnt::qasm::int::Error<'t>) -> Self {
+        Self::Int(err.own())
+    }
+}
+
+impl<'t> From<qvnt::qasm::ast::Error<'t>> for Error {
+    fn from(err: qvnt::qasm::ast::Error<'t>) -> Self {
+        Self::Ast(err.own())
+    }
 }
 
 const ON_UNEXPECTED: &str = "This error should never occur, contact developpers and provide the way to reproduce this error";
@@ -22,19 +48,21 @@ const ON_UNEXPECTED: &str = "This error should never occur, contact developpers 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Error::Io(err) => write!(f, "{}", err),
+            Error::Lines(err) => write!(f, "{}", err),
+            Error::Int(err) => write!(f, "{}", err),
+            Error::Ast(err) => write!(f, "{}", err),
             Error::Inner => write!(f, "Inner functional error. {}", ON_UNEXPECTED),
             Error::Unimplemented => write!(f, "Unimplemented function. {}", ON_UNEXPECTED),
-            Error::Dyn(err) => write!(f, "{}", err),
-            Error::Quit => write!(f, "Quit signal. {}", ON_UNEXPECTED),
         }
     }
 }
 
-impl<E: std::error::Error + 'static> From<E> for Error {
-    fn from(e: E) -> Self {
-        Self::Dyn(e.into())
-    }
-}
+// impl<E: std::error::Error + 'static> From<E> for Error {
+//     fn from(e: E) -> Self {
+//         Self::Dyn(e.into())
+//     }
+// }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
@@ -76,21 +104,18 @@ impl<'t> Process<'t> {
         self.sym.finish();
     }
 
-    pub fn process(&mut self, int_set: &mut IntTree<'t>, line: String) -> Result {
-        match line.parse::<Line>() {
-            Ok(Line::Qasm) => self.process_qasm(crate::program::leak_string(line)),
-            Ok(Line::Commands(cmds)) => self.process_cmd(int_set, cmds.into_iter()),
-            Err(err) => Err(err.into()),
+    pub fn process(&mut self, int_set: &mut IntTree<'t>, line: String) -> Result<bool> {
+        match line.parse::<Line>()? {
+            Line::Qasm => self
+                .process_qasm(crate::program::leak_string(line))
+                .map(|_| true),
+            Line::Commands(cmds) => self.process_cmd(int_set, cmds.into_iter()),
         }
     }
 
     pub fn process_qasm(&mut self, line: &'t str) -> Result {
-        let ast: Ast<'t> = Ast::from_source(line).map_err(ToOwnedError::own)?;
-        self.int = self
-            .int
-            .clone()
-            .ast_changes(&mut self.head, ast)
-            .map_err(ToOwnedError::own)?;
+        let ast: Ast<'t> = Ast::from_source(line)?;
+        self.int = self.int.clone().ast_changes(&mut self.head, ast)?;
         Ok(())
     }
 
@@ -98,7 +123,7 @@ impl<'t> Process<'t> {
         &mut self,
         int_tree: &mut IntTree<'t>,
         mut cmds: impl Iterator<Item = Command> + Clone,
-    ) -> Result {
+    ) -> Result<bool> {
         while let Some(cmd) = cmds.next() {
             match cmd {
                 Command::Loop(n) => {
@@ -131,11 +156,11 @@ impl<'t> Process<'t> {
                     );
                 }
                 Command::Help => println!("{}", lines::HELP),
-                Command::Quit => return Err(Error::Quit),
+                Command::Quit => return Ok(false),
             }
         }
 
-        Ok(())
+        Ok(true)
     }
 
     pub fn process_tag_cmd(
@@ -190,13 +215,13 @@ impl<'t> Process<'t> {
             self.reset(int_tree.collect_to_head().ok_or(Error::Inner)?);
         } else {
             let default_ast = {
-                let source = std::fs::read_to_string(path.clone())?;
+                let source = std::fs::read_to_string(&path)?;
                 let source = crate::program::leak_string(source);
-                Ast::from_source(source).map_err(ToOwnedError::own)?
+                Ast::from_source(source)?
             };
             let ast = self.storage.entry(path).or_insert(default_ast).clone();
             int_tree.checkout("");
-            let int = Int::new(ast).map_err(ToOwnedError::own)?;
+            let int = Int::new(ast)?;
             if !int_tree.commit(&path_tag, int.clone()) {
                 return Err(Error::Inner);
             }

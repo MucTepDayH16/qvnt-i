@@ -19,17 +19,17 @@ pub const ROOT_TAG: &str = ".";
 
 #[derive(Debug)]
 pub enum ProgramError {
-    ProcessError(process::Error),
-    ReadlineError(ReadlineError),
-    ClapError(clap::Error),
+    Process(process::Error),
+    Readline(ReadlineError),
+    Clap(clap::Error),
 }
 
 impl fmt::Display for ProgramError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ProgramError::ProcessError(err) => err.fmt(f),
-            ProgramError::ReadlineError(err) => err.fmt(f),
-            ProgramError::ClapError(err) => err.fmt(f),
+            ProgramError::Process(err) => err.fmt(f),
+            ProgramError::Readline(err) => err.fmt(f),
+            ProgramError::Clap(err) => err.fmt(f),
         }
     }
 }
@@ -43,16 +43,17 @@ pub(crate) struct Program<'t> {
     pub int_tree: IntTree<'t>,
 }
 
-fn handle_error(result: process::Result, dbg: bool) -> Option<ProgramResult> {
+fn decorate(result: process::Result<bool>, dbg: bool) -> Option<ProgramResult> {
     use process::Error;
 
     match result {
-        Ok(()) => None,
+        Ok(true) => None,
+        Ok(false) => Some(Ok(())),
         Err(err @ (Error::Inner | Error::Unimplemented)) => {
             eprintln!("Internal Error: Please report this to the developer.");
-            Some(Err(ProgramError::ProcessError(err)))
+            Some(Err(ProgramError::Process(err)))
         }
-        Err(Error::Dyn(err)) => {
+        Err(err) => {
             if dbg {
                 eprintln!("{:?}\n", err);
             } else {
@@ -60,7 +61,6 @@ fn handle_error(result: process::Result, dbg: bool) -> Option<ProgramResult> {
             }
             None
         }
-        Err(Error::Quit) => Some(Ok(())),
     }
 }
 
@@ -80,8 +80,10 @@ impl<'t> Program<'t> {
         };
 
         if let Some(path) = cli.input {
-            if let Some(result) = handle_error(
-                new.curr_process.load_qasm(&mut new.int_tree, path.into()),
+            if let Some(result) = decorate(
+                new.curr_process
+                    .load_qasm(&mut new.int_tree, path.into())
+                    .map(|_| true),
                 new.dbg,
             ) {
                 result?;
@@ -110,9 +112,10 @@ impl<'t> Program<'t> {
                             block.1 += &line;
                             block.0 = false;
                             let line = leak_string(std::mem::take(&mut block.1));
-                            if let Some(result) =
-                                handle_error(self.curr_process.process_qasm(line), self.dbg)
-                            {
+                            if let Some(result) = decorate(
+                                self.curr_process.process_qasm(line).map(|_| true),
+                                self.dbg,
+                            ) {
                                 break result;
                             }
                         }
@@ -120,7 +123,7 @@ impl<'t> Program<'t> {
                             block.1 += &line;
                         }
                         _ => {
-                            if let Some(result) = handle_error(
+                            if let Some(result) = decorate(
                                 self.curr_process.process(&mut self.int_tree, line),
                                 self.dbg,
                             ) {
@@ -131,7 +134,7 @@ impl<'t> Program<'t> {
                 }
                 Err(err) => {
                     eprintln!("\nError: {:?}", err);
-                    break Err(ProgramError::ReadlineError(err));
+                    break Err(ProgramError::Readline(err));
                 }
             }
         };
