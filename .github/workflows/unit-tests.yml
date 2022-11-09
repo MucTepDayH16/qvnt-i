@@ -28,13 +28,13 @@ jobs:
         run: rustup default stable
 
       - name: Clean space
-        run: cargo clean --package qvnt
+        run: cargo clean --package qvnt-i
 
       - name: Build crate
-        run: cargo build --release --package qvnt --all-features
+        run: cargo build --release --package qvnt-i
         
       - name: Test crate
-        run: cargo test --quiet --release --package qvnt --all-features
+        run: cargo test --quiet --release --package qvnt-i
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
