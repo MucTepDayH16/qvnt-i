@@ -1,6 +1,5 @@
 use std::{fmt, path::PathBuf, str::FromStr};
 
-#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     UnknownCommand(String),

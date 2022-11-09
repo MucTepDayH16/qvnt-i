@@ -1,10 +1,12 @@
+use std::fmt;
+
 use qvnt::prelude::Int;
 use rustyline::{error::ReadlineError, Editor};
 
 use crate::{
     cli::CliArgs,
     int_tree::IntTree,
-    process::{Error, Process, Result},
+    process::{self, Process},
 };
 
 pub fn leak_string<'t>(s: String) -> &'t str {
@@ -15,6 +17,25 @@ pub fn leak_string<'t>(s: String) -> &'t str {
 
 pub const ROOT_TAG: &str = ".";
 
+#[derive(Debug)]
+pub enum ProgramError {
+    ProcessError(process::Error),
+    ReadlineError(ReadlineError),
+    ClapError(clap::Error),
+}
+
+impl fmt::Display for ProgramError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProgramError::ProcessError(err) => err.fmt(f),
+            ProgramError::ReadlineError(err) => err.fmt(f),
+            ProgramError::ClapError(err) => err.fmt(f),
+        }
+    }
+}
+
+pub type ProgramResult<T = ()> = std::result::Result<T, ProgramError>;
+
 pub(crate) struct Program<'t> {
     pub dbg: bool,
     pub interact: Editor<()>,
@@ -22,12 +43,14 @@ pub(crate) struct Program<'t> {
     pub int_tree: IntTree<'t>,
 }
 
-fn handle_error(result: Result, dbg: bool) -> Option<i32> {
+fn handle_error(result: process::Result, dbg: bool) -> Option<ProgramResult> {
+    use process::Error;
+
     match result {
         Ok(()) => None,
-        Err(Error::Inner | Error::Unimplemented) => {
+        Err(err @ (Error::Inner | Error::Unimplemented)) => {
             eprintln!("Internal Error: Please report this to the developer.");
-            Some(0xDE)
+            Some(Err(ProgramError::ProcessError(err)))
         }
         Err(Error::Dyn(err)) => {
             if dbg {
@@ -37,12 +60,12 @@ fn handle_error(result: Result, dbg: bool) -> Option<i32> {
             }
             None
         }
-        Err(Error::Quit(n)) => Some(n),
+        Err(Error::Quit) => Some(Ok(())),
     }
 }
 
 impl<'t> Program<'t> {
-    pub fn new(cli: CliArgs) -> std::result::Result<Self, ()> {
+    pub fn new(cli: CliArgs) -> ProgramResult<Self> {
         const PROLOGUE: &str = "QVNT - Interactive QASM Interpreter\n\n";
         print!("{}", PROLOGUE);
 
@@ -57,20 +80,18 @@ impl<'t> Program<'t> {
         };
 
         if let Some(path) = cli.input {
-            if let Some(n) = handle_error(
+            if let Some(result) = handle_error(
                 new.curr_process.load_qasm(&mut new.int_tree, path.into()),
                 new.dbg,
             ) {
-                if n != 0 {
-                    return Err(());
-                }
+                result?;
             }
         }
 
         Ok(new)
     }
 
-    pub fn run(mut self) -> std::result::Result<(), ()> {
+    pub fn run(mut self) -> ProgramResult {
         const SIGN: &str = "|Q> ";
         const BLCK: &str = "... ";
 
@@ -89,44 +110,28 @@ impl<'t> Program<'t> {
                             block.1 += &line;
                             block.0 = false;
                             let line = leak_string(std::mem::take(&mut block.1));
-                            if let Some(n) =
+                            if let Some(result) =
                                 handle_error(self.curr_process.process_qasm(line), self.dbg)
                             {
-                                if n == 0 {
-                                    break Ok(());
-                                } else {
-                                    break Err(());
-                                }
+                                break result;
                             }
                         }
                         _ if block.0 => {
                             block.1 += &line;
                         }
                         _ => {
-                            if let Some(n) = handle_error(
+                            if let Some(result) = handle_error(
                                 self.curr_process.process(&mut self.int_tree, line),
                                 self.dbg,
                             ) {
-                                if n == 0 {
-                                    break Ok(());
-                                } else {
-                                    break Err(());
-                                }
+                                break result;
                             }
                         }
                     }
                 }
-                Err(ReadlineError::Interrupted) => {
-                    eprintln!("\nExit: Keyboard Interrupted");
-                    break Ok(());
-                }
-                Err(ReadlineError::Eof) => {
-                    eprintln!("\nExit: End of File");
-                    break Err(());
-                }
                 Err(err) => {
                     eprintln!("\nError: {:?}", err);
-                    break Err(());
+                    break Err(ProgramError::ReadlineError(err));
                 }
             }
         };

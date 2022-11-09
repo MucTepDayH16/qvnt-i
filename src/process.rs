@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, fmt, path::PathBuf};
 
 use qvnt::qasm::{Ast, Int, Sym};
 
@@ -14,7 +14,20 @@ pub enum Error {
     #[allow(dead_code)]
     Unimplemented,
     Dyn(Box<dyn std::error::Error>),
-    Quit(i32),
+    Quit,
+}
+
+const ON_UNEXPECTED: &str = "This error should never occur, contact developpers and provide the way to reproduce this error";
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Inner => write!(f, "Inner functional error. {}", ON_UNEXPECTED),
+            Error::Unimplemented => write!(f, "Unimplemented function. {}", ON_UNEXPECTED),
+            Error::Dyn(err) => write!(f, "{}", err),
+            Error::Quit => write!(f, "Quit signal. {}", ON_UNEXPECTED),
+        }
+    }
 }
 
 impl<E: std::error::Error + 'static> From<E> for Error {
@@ -118,7 +131,7 @@ impl<'t> Process<'t> {
                     );
                 }
                 Command::Help => println!("{}", lines::HELP),
-                Command::Quit => return Err(Error::Quit(0)),
+                Command::Quit => return Err(Error::Quit),
             }
         }
 
