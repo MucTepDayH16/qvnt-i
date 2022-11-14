@@ -16,3 +16,4 @@ clap        = { version = "3.1.8", features = ["derive"] }
 rustyline   = "9.1.2"
 qvnt        = { version = "0.4.3", features = ["multi-thread", "interpreter"] }
 meval       = "0.2.0"
+anyhow      = "1.0.66"
