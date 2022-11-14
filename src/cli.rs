@@ -11,7 +11,10 @@ pub struct CliArgs {
         short,
         long,
         help = "Specify history path for interpreter commands",
-        default_value = ".history"
+        default_value_t = format!(
+            "{}/.qvnt_history",
+            std::env::var_os("HOME").and_then(|h| h.into_string().ok()).unwrap_or(".".into())
+        )
     )]
     pub history: String,
 }
