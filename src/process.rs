@@ -58,6 +58,8 @@ impl fmt::Display for Error {
     }
 }
 
+impl std::error::Error for Error {}
+
 // impl<E: std::error::Error + 'static> From<E> for Error {
 //     fn from(e: E) -> Self {
 //         Self::Dyn(e.into())
@@ -114,8 +116,8 @@ impl<'t> Process<'t> {
     }
 
     pub fn process_qasm(&mut self, line: &'t str) -> Result {
-        let ast: Ast<'t> = Ast::from_source(line)?;
-        self.int = self.int.clone().ast_changes(&mut self.head, ast)?;
+        let ast = Ast::from_source(line)?;
+        self.int.ast_changes(&mut self.head, ast)?;
         Ok(())
     }
 
