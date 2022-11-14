@@ -1,3 +1,10 @@
+pub fn leak_string<'t>(s: String) -> &'t str {
+    let s = Box::leak(s.into_boxed_str()) as &'t str;
+    #[cfg(test)]
+    eprintln!("Leakage {{ ptr: {:?}, len: {} }}", s as *const _, s.len());
+    s
+}
+
 pub trait DropExt {
     fn drop(self);
 }

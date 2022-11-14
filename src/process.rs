@@ -5,7 +5,7 @@ use qvnt::qasm::{Ast, Int, Sym};
 use crate::{
     int_tree::IntTree,
     lines::{self, Command, Line},
-    utils::{owned_errors, owned_errors::ToOwnedError},
+    utils::{owned_errors, owned_errors::ToOwnedError, drop_leakage::leak_string},
 };
 
 #[derive(Debug)]
@@ -109,13 +109,14 @@ impl<'t> Process<'t> {
     pub fn process(&mut self, int_set: &mut IntTree<'t>, line: String) -> Result<bool> {
         match line.parse::<Line>()? {
             Line::Qasm => self
-                .process_qasm(crate::program::leak_string(line))
+                .process_qasm(line)
                 .map(|_| true),
             Line::Commands(cmds) => self.process_cmd(int_set, cmds.into_iter()),
         }
     }
 
-    pub fn process_qasm(&mut self, line: &'t str) -> Result {
+    pub fn process_qasm(&mut self, line: String) -> Result {
+        let line = leak_string(line);
         let ast = Ast::from_source(line)?;
         self.int.ast_changes(&mut self.head, ast)?;
         Ok(())
@@ -218,7 +219,7 @@ impl<'t> Process<'t> {
         } else {
             let default_ast = {
                 let source = std::fs::read_to_string(&path)?;
-                let source = crate::program::leak_string(source);
+                let source = leak_string(source);
                 Ast::from_source(source)?
             };
             let ast = self.storage.entry(path).or_insert(default_ast).clone();

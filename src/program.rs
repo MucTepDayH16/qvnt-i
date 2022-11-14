@@ -7,12 +7,6 @@ use crate::{
     process::{self, Process},
 };
 
-pub fn leak_string<'t>(s: String) -> &'t str {
-    let s = Box::leak(s.into_boxed_str()) as &'t str;
-    // eprintln!("Leakage {{ ptr: {:?}, len: {} }}", s as *const _, s.len());
-    s
-}
-
 pub const ROOT_TAG: &str = ".";
 
 pub(crate) struct Program<'t> {
@@ -113,7 +107,7 @@ impl<'t> Program<'t> {
                         Some('}') if block.0 => {
                             block.1 += &line;
                             block.0 = false;
-                            let line = leak_string(std::mem::take(&mut block.1));
+                            let line = std::mem::take(&mut block.1);
                             if let Some(result) = decorate(
                                 self.curr_process.process_qasm(line).map(|_| true),
                                 self.dbg,
@@ -155,7 +149,7 @@ impl<'t> Program<'t> {
 mod tests {
     use qvnt::prelude::Int;
 
-    use crate::{int_tree::IntTree, process::*, program::leak_string};
+    use crate::{int_tree::IntTree, process::*};
 
     #[test]
     fn main_loop() {
@@ -185,8 +179,7 @@ mod tests {
                 Some('}') if block.0 => {
                     block.1 += &line;
                     block.0 = false;
-                    let line = leak_string(block.1);
-                    curr_process.process_qasm(line).unwrap();
+                    curr_process.process_qasm(block.1).unwrap();
                     block.1 = String::new();
                 }
                 _ if block.0 => {

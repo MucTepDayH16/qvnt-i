@@ -117,6 +117,14 @@ where
     }
 }
 
+impl<'t> Drop for IntTree<'t> {
+    fn drop(&mut self) {
+        for (_, (_, dropped)) in self.map.drain() {
+            <Int<'t> as utils::drop_leakage::DropExt>::drop(dropped);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     UnknownTagCmd(String),
