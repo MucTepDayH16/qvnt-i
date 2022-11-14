@@ -1,7 +1,5 @@
-use std::fmt;
-
 use qvnt::prelude::Int;
-use rustyline::{error::ReadlineError, Editor};
+use rustyline::{error::ReadlineError, Config, Editor};
 
 use crate::{
     cli::CliArgs,
@@ -17,33 +15,16 @@ pub fn leak_string<'t>(s: String) -> &'t str {
 
 pub const ROOT_TAG: &str = ".";
 
-#[derive(Debug)]
-pub enum ProgramError {
-    Process(process::Error),
-    Readline(ReadlineError),
-    Clap(clap::Error),
-}
-
-impl fmt::Display for ProgramError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ProgramError::Process(err) => err.fmt(f),
-            ProgramError::Readline(err) => err.fmt(f),
-            ProgramError::Clap(err) => err.fmt(f),
-        }
-    }
-}
-
-pub type ProgramResult<T = ()> = std::result::Result<T, ProgramError>;
-
 pub(crate) struct Program<'t> {
+    pub history: String,
     pub dbg: bool,
+    pub input: Option<String>,
     pub interact: Editor<()>,
     pub curr_process: Process<'t>,
     pub int_tree: IntTree<'t>,
 }
 
-fn decorate(result: process::Result<bool>, dbg: bool) -> Option<ProgramResult> {
+fn decorate(result: process::Result<bool>, dbg: bool) -> Option<anyhow::Result<()>> {
     use process::Error;
 
     match result {
@@ -51,7 +32,7 @@ fn decorate(result: process::Result<bool>, dbg: bool) -> Option<ProgramResult> {
         Ok(false) => Some(Ok(())),
         Err(err @ (Error::Inner | Error::Unimplemented)) => {
             eprintln!("Internal Error: Please report this to the developer.");
-            Some(Err(ProgramError::Process(err)))
+            Some(Err(anyhow::anyhow!(err)))
         }
         Err(err) => {
             if dbg {
@@ -64,41 +45,62 @@ fn decorate(result: process::Result<bool>, dbg: bool) -> Option<ProgramResult> {
     }
 }
 
+fn decorate_readline_error(err: ReadlineError, dbg: bool) -> Option<anyhow::Error> {
+    Some(anyhow::anyhow!(match err {
+        err @ ReadlineError::Interrupted => err,
+        #[cfg(unix)]
+        err @ ReadlineError::Errno(_) => err,
+        #[cfg(windows)]
+        err @ ReadlineError::SystemError(_) => err,
+        err => {
+            if dbg {
+                eprintln!("{:?}\n", err);
+            } else {
+                eprintln!("{}\n", err);
+            }
+            return None;
+        }
+    }))
+}
+
 impl<'t> Program<'t> {
-    pub fn new(cli: CliArgs) -> ProgramResult<Self> {
+    pub fn new(cli: CliArgs) -> Self {
         const PROLOGUE: &str = "QVNT - Interactive QASM Interpreter\n\n";
         print!("{}", PROLOGUE);
 
-        let mut interact = Editor::new();
-        let _ = interact.load_history(&cli.history);
+        let config = Config::builder()
+            .max_history_size(1_000)
+            .check_cursor_position(true)
+            .build();
 
-        let mut new = Self {
+        println!("{}", cli.history);
+        Self {
+            history: cli.history,
             dbg: cli.dbg,
-            interact,
+            input: cli.input,
+            interact: Editor::with_config(config),
             curr_process: Process::new(Int::default()),
             int_tree: IntTree::with_root(ROOT_TAG),
-        };
+        }
+    }
 
-        if let Some(path) = cli.input {
+    fn loop_fn(&mut self) -> anyhow::Result<()> {
+        if let Some(path) = self.input.take() {
             if let Some(result) = decorate(
-                new.curr_process
-                    .load_qasm(&mut new.int_tree, path.into())
+                self.curr_process
+                    .load_qasm(&mut self.int_tree, path.into())
                     .map(|_| true),
-                new.dbg,
+                self.dbg,
             ) {
                 result?;
             }
         }
 
-        Ok(new)
-    }
-
-    pub fn run(mut self) -> ProgramResult {
         const SIGN: &str = "|Q> ";
         const BLCK: &str = "... ";
 
         let mut block = (false, String::new());
-        let ret_code = loop {
+        loop {
             match self.interact.readline(if block.0 { BLCK } else { SIGN }) {
                 Ok(line) => {
                     println!();
@@ -116,7 +118,7 @@ impl<'t> Program<'t> {
                                 self.curr_process.process_qasm(line).map(|_| true),
                                 self.dbg,
                             ) {
-                                break result;
+                                return result;
                             }
                         }
                         _ if block.0 => {
@@ -127,19 +129,24 @@ impl<'t> Program<'t> {
                                 self.curr_process.process(&mut self.int_tree, line),
                                 self.dbg,
                             ) {
-                                break result;
+                                return result;
                             }
                         }
                     }
                 }
                 Err(err) => {
-                    eprintln!("\nError: {:?}", err);
-                    break Err(ProgramError::Readline(err));
+                    if let Some(err) = decorate_readline_error(err, self.dbg) {
+                        return Err(err);
+                    }
                 }
             }
-        };
+        }
+    }
 
-        let _ = self.interact.save_history(".history");
+    pub fn run(mut self) -> anyhow::Result<()> {
+        let _ = self.interact.load_history(&self.history);
+        let ret_code = self.loop_fn();
+        let _ = self.interact.save_history(&self.history);
         ret_code
     }
 }

@@ -63,9 +63,9 @@ pub mod int {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 OwnedError::NoQReg(name) =>
-                    write!(f, "There's no quantum register, called {name:?}. Ensure to add this code: qreg {name}[SIZE]"),
+                    write!(f, "There's no quantum register called {name:?}. Ensure to add this code: qreg {name}[SIZE]"),
                 OwnedError::NoCReg(name) =>
-                    write!(f, "There's no classical register, called {name:?}. Ensure to add this code: creg {name}[*SIZE*]"),
+                    write!(f, "There's no classical register called {name:?}. Ensure to add this code: creg {name}[SIZE]"),
                 OwnedError::DupQReg(name, size) =>
                     write!(f, "Quantum register with a similar name {name:?}  already defined with \"qreg {name}[{size}]\""),
                 OwnedError::DupCReg(name, size) =>
@@ -73,7 +73,7 @@ pub mod int {
                 OwnedError::IdxOutOfRange(name, idx) =>
                     write!(f, "Index (={idx}) is out of bounds for register: {name}[{idx}]"),
                 OwnedError::UnknownGate(name) =>
-                    write!(f, "There's no quantum gate, called {name:?}"),
+                    write!(f, "There's no quantum gate called {name:?}"),
                 OwnedError::InvalidControlMask(ctrl, act) =>
                     write!(f, "Control mask ({ctrl}) should not overlap with operators' qubits ({act})"),
                 OwnedError::UnevaluatedArgument(arg, err) =>

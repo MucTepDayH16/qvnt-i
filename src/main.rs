@@ -5,8 +5,8 @@ mod process;
 mod program;
 mod utils;
 
-fn main() -> program::ProgramResult {
+fn main() -> anyhow::Result<()> {
     let cli = cli::CliArgs::new()?;
-    program::Program::new(cli)?.run()?;
+    program::Program::new(cli).run()?;
     Ok(())
 }

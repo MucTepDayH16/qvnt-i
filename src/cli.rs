@@ -1,5 +1,3 @@
-use crate::program::{ProgramError, ProgramResult};
-
 #[derive(clap::Parser, Debug)]
 #[clap(name = "QVNT Interpreter", author, version, about, long_about = None)]
 pub struct CliArgs {
@@ -20,7 +18,7 @@ pub struct CliArgs {
 }
 
 impl CliArgs {
-    pub fn new() -> ProgramResult<Self> {
-        <Self as clap::StructOpt>::try_parse().map_err(ProgramError::Clap)
+    pub fn new() -> clap::Result<Self> {
+        <Self as clap::StructOpt>::try_parse()
     }
 }
