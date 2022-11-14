@@ -5,7 +5,7 @@ use qvnt::qasm::{Ast, Int, Sym};
 use crate::{
     int_tree::IntTree,
     lines::{self, Command, Line},
-    utils::{owned_errors, owned_errors::ToOwnedError, drop_leakage::leak_string},
+    utils::{drop_leakage::leak_string, owned_errors, owned_errors::ToOwnedError},
 };
 
 #[derive(Debug)]
@@ -108,9 +108,7 @@ impl<'t> Process<'t> {
 
     pub fn process(&mut self, int_set: &mut IntTree<'t>, line: String) -> Result<bool> {
         match line.parse::<Line>()? {
-            Line::Qasm => self
-                .process_qasm(line)
-                .map(|_| true),
+            Line::Qasm => self.process_qasm(line).map(|_| true),
             Line::Commands(cmds) => self.process_cmd(int_set, cmds.into_iter()),
         }
     }

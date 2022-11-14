@@ -12,6 +12,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.66"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "216261ddc8289130e551ddcd5ce8a064710c0d064a4d2895c67151c92b5443f6"
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -467,8 +473,7 @@ dependencies = [
 [[package]]
 name = "qvnt"
 version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84f4daf8b66bce402c487644a1bf9c0194bbbbfd42a8c28277128d3cbef9018e"
+source = "git+https://github.com/MucTepDayH16/qvnt.git#cc8d4b23b18a9abcbf61ab7bcfb8c1ed9438bab9"
 dependencies = [
  "enum_dispatch",
  "float-cmp",
@@ -485,6 +490,7 @@ dependencies = [
 name = "qvnt-i"
 version = "0.4.3-fix1"
 dependencies = [
+ "anyhow",
  "clap",
  "meval",
  "qvnt",
