@@ -41,7 +41,7 @@ fn decorate(result: process::Result<bool>, dbg: bool) -> Option<anyhow::Result<(
 
 fn decorate_readline_error(err: ReadlineError, dbg: bool) -> Option<anyhow::Error> {
     Some(anyhow::anyhow!(match err {
-        err @ ReadlineError::Interrupted => err,
+        ReadlineError::Interrupted => return None,
         #[cfg(unix)]
         err @ ReadlineError::Errno(_) => err,
         #[cfg(windows)]
@@ -67,7 +67,6 @@ impl<'t> Program<'t> {
             .check_cursor_position(true)
             .build();
 
-        println!("{}", cli.history);
         Self {
             history: cli.history,
             dbg: cli.dbg,
