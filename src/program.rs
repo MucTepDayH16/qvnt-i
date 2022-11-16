@@ -41,11 +41,14 @@ fn decorate(result: process::Result<bool>, dbg: bool) -> Option<anyhow::Result<(
 
 fn decorate_readline_error(err: ReadlineError, dbg: bool) -> Option<anyhow::Error> {
     Some(anyhow::anyhow!(match err {
-        // ReadlineError::Interrupted => return None,
+        ReadlineError::Interrupted => {
+            println!();
+            return None
+        },
         #[cfg(unix)]
         err @ ReadlineError::Errno(_) => err,
-        // #[cfg(windows)]
-        // err @ ReadlineError::SystemError(_) => err,
+        #[cfg(windows)]
+        err @ ReadlineError::SystemError(_) => err,
         err => {
             if dbg {
                 eprintln!("{:?}\n", err);
