@@ -43,8 +43,8 @@ fn decorate_readline_error(err: ReadlineError, dbg: bool) -> Option<anyhow::Erro
     Some(anyhow::anyhow!(match err {
         ReadlineError::Interrupted => {
             println!();
-            return None
-        },
+            return None;
+        }
         #[cfg(unix)]
         err @ ReadlineError::Errno(_) => err,
         #[cfg(windows)]
