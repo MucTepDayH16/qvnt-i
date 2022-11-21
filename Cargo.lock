@@ -485,8 +485,9 @@ dependencies = [
 
 [[package]]
 name = "qvnt"
-version = "0.4.3"
-source = "git+https://github.com/MucTepDayH16/qvnt.git#50fb7ae7f7a50af7c3d59ed476f5fc592640aa44"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a90f08a25c125fb54a4f50bf3083773ab8e5bb2a7eeaf50a1d62d29954511b5"
 dependencies = [
  "enum_dispatch",
  "float-cmp",
@@ -501,7 +502,7 @@ dependencies = [
 
 [[package]]
 name = "qvnt-i"
-version = "0.4.3-fix1"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "clap",
