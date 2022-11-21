@@ -57,6 +57,8 @@ pub mod int {
         MacroError(macros::OwnedError),
         MacroAlreadyDefined(String),
         DisallowedNodeInIf(String),
+        IdentIsTooLarge(String, usize),
+        RegisterIsTooLarge(String, usize),
     }
 
     impl fmt::Display for OwnedError {
@@ -89,7 +91,11 @@ pub mod int {
                 OwnedError::MacroAlreadyDefined(name) =>
                     write!(f, "Macro with name {name:?} already defined"),
                 OwnedError::DisallowedNodeInIf(node) =>
-                    write!(f, "Operation {node:?} isn't allowed in If block")
+                    write!(f, "Operation {node:?} isn't allowed in If block"),
+                OwnedError::IdentIsTooLarge(name, bytes_len) =>
+                    write!(f, "Ident {name:?} has size({bytes_len} bytes) more than 32 bytes"),
+                OwnedError::RegisterIsTooLarge(name, q_num) =>
+                    write!(f, "Register {name:?} hase {q_num} qubits/bits which is more than simulator is capable of to simulate"),
             }
         }
     }
@@ -124,6 +130,12 @@ pub mod int {
                 }
                 Self::DisallowedNodeInIf(node) => {
                     OwnedError::DisallowedNodeInIf(format!("{node:?}"))
+                }
+                Self::RegisterIsTooLarge(name, size) => {
+                    OwnedError::RegisterIsTooLarge(name.to_string(), size)
+                }
+                Self::IdentIsTooLarge(name, bytes_len) => {
+                    OwnedError::IdentIsTooLarge(name.to_string(), bytes_len)
                 }
             }
         }
