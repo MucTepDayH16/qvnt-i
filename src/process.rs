@@ -19,6 +19,12 @@ pub enum Error {
     Unimplemented,
 }
 
+impl Error {
+    pub fn should_echo(&self) -> bool {
+        !matches!(self, Self::Ast(owned_errors::ast::OwnedError::EmptySource))
+    }
+}
+
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
         Self::Io(err)
@@ -138,20 +144,20 @@ impl<'t> Process<'t> {
                 Command::Load(path) => self.load_qasm(int_tree, path)?,
                 Command::Class => {
                     self.sym_update();
-                    println!("CReg: {}\n", self.sym.get_class().get())
+                    println!("CReg: {}", self.sym.get_class().get())
                 }
                 Command::Polar => {
                     self.sym_update();
-                    println!("QReg polar: {:.4?}\n", self.sym.get_polar_wavefunction());
+                    println!("QReg polar: {:.4?}", self.sym.get_polar_wavefunction());
                 }
                 Command::Probs => {
                     self.sym_update();
-                    println!("QReg probabilities: {:.4?}\n", self.sym.get_probabilities());
+                    println!("QReg probabilities: {:.4?}", self.sym.get_probabilities());
                 }
-                Command::Ops => println!("Operations: {}\n", self.int().get_ops_tree()),
+                Command::Ops => println!("Operations: {}", self.int().get_ops_tree()),
                 Command::Names => {
                     println!(
-                        "QReg: {}\nCReg: {}\n",
+                        "QReg: {}\nCReg: {}",
                         self.int().get_q_alias(),
                         self.int().get_c_alias()
                     );
@@ -171,7 +177,7 @@ impl<'t> Process<'t> {
     ) -> Result {
         use crate::int_tree::Command;
         match tag_cmd {
-            Command::List => println!("{:?}\n", int_tree.keys()),
+            Command::List => println!("{:?}", int_tree.keys()),
             Command::Create(tag) => {
                 if !int_tree.commit(&tag, self.head.clone()) {
                     return Err(lines::Error::ExistedTagName(tag).into());

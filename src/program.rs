@@ -1,3 +1,5 @@
+use std::fmt;
+
 use qvnt::prelude::Int;
 use rustyline::{error::ReadlineError, Config, Editor};
 
@@ -9,7 +11,56 @@ use crate::{
 
 pub const ROOT_TAG: &str = ".";
 
-pub(crate) struct Program<'t> {
+pub type ProgramResult<T = ()> = Result<T, ProgramError>;
+
+#[derive(Debug)]
+pub enum ProgramError {
+    Process(process::Error),
+    Readline(ReadlineError),
+}
+
+impl From<process::Error> for ProgramError {
+    fn from(err: process::Error) -> Self {
+        Self::Process(err)
+    }
+}
+
+impl From<ReadlineError> for ProgramError {
+    fn from(err: ReadlineError) -> Self {
+        Self::Readline(err)
+    }
+}
+
+impl fmt::Display for ProgramError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProgramError::Process(err) => write!(f, "Process error: {}", err),
+            ProgramError::Readline(err) => write!(f, "Readline error: {}", err),
+        }
+    }
+}
+
+impl ProgramError {
+    pub fn should_echo(&self) -> bool {
+        match self {
+            ProgramError::Process(err) => err.should_echo(),
+            ProgramError::Readline(err) => !matches!(err, ReadlineError::Interrupted),
+        }
+    }
+
+    pub fn is_fatal(&self) -> bool {
+        match self {
+            ProgramError::Process(process::Error::Inner | process::Error::Unimplemented) => true,
+            #[cfg(unix)]
+            ProgramError::Readline(ReadlineError::Errno(_)) => true,
+            #[cfg(windows)]
+            ProgramError::Readline(ReadlineError::SystemError(_)) => true,
+            _ => false,
+        }
+    }
+}
+
+pub struct Program<'t> {
     pub history: String,
     pub dbg: bool,
     pub input: Option<String>,
@@ -18,46 +69,23 @@ pub(crate) struct Program<'t> {
     pub int_tree: IntTree<'t>,
 }
 
-fn decorate(result: process::Result<bool>, dbg: bool) -> Option<anyhow::Result<()>> {
-    use process::Error;
-
-    match result {
+fn decorate<E: Into<ProgramError>>(
+    result: Result<bool, E>,
+    dbg: bool,
+) -> Option<ProgramResult<()>> {
+    match result.map_err(Into::into) {
         Ok(true) => None,
         Ok(false) => Some(Ok(())),
-        Err(err @ (Error::Inner | Error::Unimplemented)) => {
-            eprintln!("Internal Error: Please report this to the developer.");
-            Some(Err(anyhow::anyhow!(err)))
-        }
+        Err(err) if err.is_fatal() => Some(Err(err)),
         Err(err) => {
             if dbg {
-                eprintln!("{:?}\n", err);
-            } else {
-                eprintln!("{}\n", err);
+                eprintln!("{:?}", err);
+            } else if err.should_echo() {
+                eprintln!("{}", err);
             }
             None
         }
     }
-}
-
-fn decorate_readline_error(err: ReadlineError, dbg: bool) -> Option<anyhow::Error> {
-    Some(anyhow::anyhow!(match err {
-        ReadlineError::Interrupted => {
-            println!();
-            return None;
-        }
-        #[cfg(unix)]
-        err @ ReadlineError::Errno(_) => err,
-        #[cfg(windows)]
-        err @ ReadlineError::SystemError(_) => err,
-        err => {
-            if dbg {
-                eprintln!("{:?}\n", err);
-            } else {
-                eprintln!("{}\n", err);
-            }
-            return None;
-        }
-    }))
 }
 
 impl<'t> Program<'t> {
@@ -80,7 +108,7 @@ impl<'t> Program<'t> {
         }
     }
 
-    fn loop_fn(&mut self) -> anyhow::Result<()> {
+    fn loop_fn(&mut self) -> ProgramResult<()> {
         if let Some(path) = self.input.take() {
             if let Some(result) = decorate(
                 self.curr_process
@@ -99,7 +127,6 @@ impl<'t> Program<'t> {
         loop {
             match self.interact.readline(if block.0 { BLCK } else { SIGN }) {
                 Ok(line) => {
-                    println!();
                     self.interact.add_history_entry(&line);
                     match line.chars().last() {
                         Some('{') => {
@@ -131,15 +158,16 @@ impl<'t> Program<'t> {
                     }
                 }
                 Err(err) => {
-                    if let Some(err) = decorate_readline_error(err, self.dbg) {
-                        return Err(err);
+                    let err = Err(ProgramError::Readline(err));
+                    if let Some(err) = decorate(err, self.dbg) {
+                        return err;
                     }
                 }
             }
         }
     }
 
-    pub fn run(mut self) -> anyhow::Result<()> {
+    pub fn run(mut self) -> ProgramResult<()> {
         let _ = self.interact.load_history(&self.history);
         let ret_code = self.loop_fn();
         let _ = self.interact.save_history(&self.history);
