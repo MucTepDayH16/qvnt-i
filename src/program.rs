@@ -32,12 +32,6 @@ impl From<ReadlineError> for ProgramError {
     }
 }
 
-impl From<ProgramError> for anyhow::Error {
-    fn from(err: ProgramError) -> Self {
-        anyhow::anyhow!(err)
-    }
-}
-
 impl fmt::Display for ProgramError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
