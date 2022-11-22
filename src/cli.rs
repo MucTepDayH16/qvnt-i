@@ -5,12 +5,12 @@ use std::path::PathBuf;
 pub struct CliArgs {
     #[clap(index(1), help = "Specify QASM file path")]
     pub input: Option<PathBuf>,
-    #[clap(short, long, help = "Specify history path for interpreter commands")]
+    #[clap(short = 'H', long, help = "Specify history path for interpreter commands")]
     pub history: Option<PathBuf>,
 }
 
 impl CliArgs {
     pub fn new() -> Self {
-        <Self as clap::StructOpt>::parse()
+        <Self as clap::Parser>::parse()
     }
 }

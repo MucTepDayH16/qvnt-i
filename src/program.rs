@@ -1,7 +1,7 @@
 use std::{fmt, path::PathBuf};
 
 use qvnt::prelude::Int;
-use rustyline::{error::ReadlineError, Config, Editor};
+use rustyline::{error::ReadlineError, Config, Editor, Behavior};
 
 use crate::{
     cli::CliArgs,
@@ -105,13 +105,14 @@ impl<'t> Program<'t> {
 
         let config = Config::builder()
             .max_history_size(1_000)
+            .history_ignore_dups(true)
             .check_cursor_position(true)
             .build();
 
         Ok(Self {
             history,
             input: cli.input,
-            interact: Editor::with_config(config),
+            interact: Editor::with_config(config)?,
             curr_process: Process::new(Int::default()),
             int_tree: IntTree::with_root(ROOT_TAG),
         })
