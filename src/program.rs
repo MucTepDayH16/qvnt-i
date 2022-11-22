@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, path::PathBuf};
 
 use qvnt::prelude::Int;
 use rustyline::{error::ReadlineError, Config, Editor};
@@ -15,6 +15,7 @@ pub type ProgramResult<T = ()> = Result<T, ProgramError>;
 
 #[derive(Debug)]
 pub enum ProgramError {
+    HistoryPath,
     Process(process::Error),
     Readline(ReadlineError),
 }
@@ -31,9 +32,16 @@ impl From<ReadlineError> for ProgramError {
     }
 }
 
+impl From<ProgramError> for anyhow::Error {
+    fn from(err: ProgramError) -> Self {
+        anyhow::anyhow!(err)
+    }
+}
+
 impl fmt::Display for ProgramError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ProgramError::HistoryPath => write!(f, "Cannot find HOME or CWD"),
             ProgramError::Process(err) => write!(f, "Process error: {}", err),
             ProgramError::Readline(err) => write!(f, "Readline error: {}", err),
         }
@@ -43,6 +51,7 @@ impl fmt::Display for ProgramError {
 impl ProgramError {
     pub fn should_echo(&self) -> bool {
         match self {
+            ProgramError::HistoryPath => false,
             ProgramError::Process(err) => err.should_echo(),
             ProgramError::Readline(err) => !matches!(err, ReadlineError::Interrupted),
         }
@@ -61,24 +70,20 @@ impl ProgramError {
 }
 
 pub struct Program<'t> {
-    pub history: String,
-    pub dbg: bool,
-    pub input: Option<String>,
+    pub history: PathBuf,
+    pub input: Option<PathBuf>,
     pub interact: Editor<()>,
     pub curr_process: Process<'t>,
     pub int_tree: IntTree<'t>,
 }
 
-fn decorate<E: Into<ProgramError>>(
-    result: Result<bool, E>,
-    dbg: bool,
-) -> Option<ProgramResult<()>> {
+fn decorate<E: Into<ProgramError>>(result: Result<bool, E>) -> Option<ProgramResult<()>> {
     match result.map_err(Into::into) {
         Ok(true) => None,
         Ok(false) => Some(Ok(())),
         Err(err) if err.is_fatal() => Some(Err(err)),
         Err(err) => {
-            if dbg {
+            if cfg!(debug_assertions) {
                 eprintln!("{:?}", err);
             } else if err.should_echo() {
                 eprintln!("{}", err);
@@ -89,32 +94,41 @@ fn decorate<E: Into<ProgramError>>(
 }
 
 impl<'t> Program<'t> {
-    pub fn new(cli: CliArgs) -> Self {
-        const PROLOGUE: &str = "QVNT - Interactive QASM Interpreter\n\n";
-        print!("{}", PROLOGUE);
+    pub fn new(cli: CliArgs) -> ProgramResult<Self> {
+        let history = if let Some(history) = cli.history {
+            if !history.is_file() {
+                return Err(ProgramError::HistoryPath);
+            }
+            history
+        } else {
+            let mut history_path = home::home_dir()
+                .or_else(|| std::env::current_dir().ok())
+                .filter(|p| p.is_dir())
+                .ok_or(ProgramError::HistoryPath)?;
+            history_path.push(".qvnt_history");
+            history_path
+        };
 
         let config = Config::builder()
             .max_history_size(1_000)
             .check_cursor_position(true)
             .build();
 
-        Self {
-            history: cli.history,
-            dbg: cli.dbg,
+        Ok(Self {
+            history,
             input: cli.input,
             interact: Editor::with_config(config),
             curr_process: Process::new(Int::default()),
             int_tree: IntTree::with_root(ROOT_TAG),
-        }
+        })
     }
 
     fn loop_fn(&mut self) -> ProgramResult<()> {
         if let Some(path) = self.input.take() {
             if let Some(result) = decorate(
                 self.curr_process
-                    .load_qasm(&mut self.int_tree, path.into())
+                    .load_qasm(&mut self.int_tree, path)
                     .map(|_| true),
-                self.dbg,
             ) {
                 result?;
             }
@@ -137,10 +151,9 @@ impl<'t> Program<'t> {
                             block.1 += &line;
                             block.0 = false;
                             let line = std::mem::take(&mut block.1);
-                            if let Some(result) = decorate(
-                                self.curr_process.process_qasm(line).map(|_| true),
-                                self.dbg,
-                            ) {
+                            if let Some(result) =
+                                decorate(self.curr_process.process_qasm(line).map(|_| true))
+                            {
                                 return result;
                             }
                         }
@@ -148,10 +161,9 @@ impl<'t> Program<'t> {
                             block.1 += &line;
                         }
                         _ => {
-                            if let Some(result) = decorate(
-                                self.curr_process.process(&mut self.int_tree, line),
-                                self.dbg,
-                            ) {
+                            if let Some(result) =
+                                decorate(self.curr_process.process(&mut self.int_tree, line))
+                            {
                                 return result;
                             }
                         }
@@ -159,7 +171,7 @@ impl<'t> Program<'t> {
                 }
                 Err(err) => {
                     let err = Err(ProgramError::Readline(err));
-                    if let Some(err) = decorate(err, self.dbg) {
+                    if let Some(err) = decorate(err) {
                         return err;
                     }
                 }
@@ -168,9 +180,13 @@ impl<'t> Program<'t> {
     }
 
     pub fn run(mut self) -> ProgramResult<()> {
+        const PROLOGUE: &str = "QVNT - Interactive QASM Interpreter\n\n";
+        print!("{}", PROLOGUE);
+
         let _ = self.interact.load_history(&self.history);
         let ret_code = self.loop_fn();
         let _ = self.interact.save_history(&self.history);
+
         ret_code
     }
 }

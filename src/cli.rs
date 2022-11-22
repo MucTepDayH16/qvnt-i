@@ -1,20 +1,12 @@
+use std::path::PathBuf;
+
 #[derive(clap::Parser, Debug)]
 #[clap(name = "QVNT Interpreter", author, version, about, long_about = None)]
 pub struct CliArgs {
     #[clap(short, long, help = "Specify QASM file path")]
-    pub input: Option<String>,
-    #[clap(long, help = "Set debug format for errors")]
-    pub dbg: bool,
-    #[clap(
-        short,
-        long,
-        help = "Specify history path for interpreter commands",
-        default_value_t = format!(
-            "{}/.qvnt_history",
-            std::env::var_os("HOME").and_then(|h| h.into_string().ok()).unwrap_or(".".into())
-        )
-    )]
-    pub history: String,
+    pub input: Option<PathBuf>,
+    #[clap(short, long, help = "Specify history path for interpreter commands")]
+    pub history: Option<PathBuf>,
 }
 
 impl CliArgs {
