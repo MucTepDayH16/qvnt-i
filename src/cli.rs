@@ -3,9 +3,9 @@ use std::path::PathBuf;
 #[derive(clap::Parser, Debug)]
 #[clap(name = "QVNT Interpreter", author, version, about, long_about = None)]
 pub struct CliArgs {
-    #[clap(index(1), help = "Specify QASM file path")]
+    #[clap(index(1), help = "OpenQASM file path")]
     pub input: Option<PathBuf>,
-    #[clap(short = 'H', long, help = "Specify history path for interpreter commands")]
+    #[clap(short = 'H', long, help = "History path for interpreter commands")]
     pub history: Option<PathBuf>,
 }
 

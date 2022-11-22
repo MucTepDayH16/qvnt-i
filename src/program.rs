@@ -1,7 +1,7 @@
 use std::{fmt, path::PathBuf};
 
 use qvnt::prelude::Int;
-use rustyline::{error::ReadlineError, Config, Editor, Behavior};
+use rustyline::{error::ReadlineError, Config, Editor};
 
 use crate::{
     cli::CliArgs,
