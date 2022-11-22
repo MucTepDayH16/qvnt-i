@@ -29,7 +29,7 @@ cargo install qvnt-i
 Now, you are able to _'run'_ quantum simulator with OpenQASM language.
 `*.qasm` files should be passed to interpreter via cli:
 ```shell
-qvnt-i --input ./cirquit.qasm
+qvnt-i ./cirquit.qasm
 |Q> :go
 ```
 or via interpreter:
