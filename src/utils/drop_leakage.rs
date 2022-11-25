@@ -1,7 +1,6 @@
 pub fn leak_string<'t>(s: String) -> &'t str {
     let s = Box::leak(s.into_boxed_str()) as &'t str;
-    #[cfg(debug_leakage)]
-    eprintln!("Leakage {{ ptr: {:?}, len: {} }}", s as *const _, s.len());
+    log::trace!(target: "qvnt_i::drop_leakage","Leakage {{ ptr: {:?}, len: {} }}", s as *const _, s.len());
     s
 }
 
@@ -24,8 +23,7 @@ impl<'t> DropExt for qvnt::qasm::Ast<'t> {
     fn drop(self) {
         unsafe {
             let s = self.source();
-            #[cfg(debug_leakage)]
-            eprintln!("Unleak {{ ptr: {:?}, len: {} }}", s as *const _, s.len());
+            log::trace!(target: "qvnt_i::drop_leakage", "Unleak {{ ptr: {:?}, len: {} }}", s as *const _, s.len());
             unleak_str(s);
         }
     }

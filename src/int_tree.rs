@@ -46,6 +46,7 @@ where
         let tag = tag.as_ref().to_string();
 
         if self.map.contains_key(&tag) {
+            log::trace!(target: "qvnt_i::tag::commit", "Tag {} already exists", tag);
             return false;
         }
 
@@ -55,6 +56,7 @@ where
             None => Weak::new(),
         };
         *self.head.borrow_mut() = Some(Rc::clone(&tag));
+        log::trace!(target: "qvnt_i::tag::commit", "Tag {} created", tag);
         self.map.insert(tag, (old_head, change));
 
         true
@@ -66,9 +68,13 @@ where
         match self.map.get_key_value(&tag) {
             Some(entry) => {
                 *self.head.borrow_mut() = Some(Rc::clone(entry.0));
+                log::trace!(target: "qvnt_i::tag::checkout", "New head is on tag {}", tag);
                 true
             }
-            None => false,
+            None => {
+                log::trace!(target: "qvnt_i::tag::checkout", "Tag {} doesn't exist", tag);
+                false
+            }
         }
     }
 
@@ -76,7 +82,9 @@ where
         let mut start = Rc::clone(self.head.borrow().as_ref()?);
         let mut int_changes = Int::<'t>::default();
 
+        log::trace!(target: "qvnt_i::tag::collect", "Staring collection");
         loop {
+            log::trace!(target: "qvnt_i::tag::collect", "Collection step to tag {}", start);
             let curr = self.map.get(&start)?.clone();
             int_changes = unsafe { int_changes.prepend_int(curr.1.clone()) };
             if let Some(next) = Weak::upgrade(&curr.0) {
@@ -110,8 +118,15 @@ where
             return RemoveStatus::NotFound;
         }
 
-        let removed = self.map.remove(&tag).unwrap().1;
+        let removed = self
+            .map
+            .remove(&tag)
+            .expect(
+                "if entry `tag` does not exist an error `RemoveStatus::NotFound` returnded; qed",
+            )
+            .1;
         <Int<'t> as utils::drop_leakage::DropExt>::drop(removed);
+        log::trace!(target: "qvnt_i::tag::remove", "Tag {} removed", tag);
 
         RemoveStatus::Removed
     }

@@ -154,7 +154,7 @@ impl<'t> Process<'t> {
                 Command::Load(path) => self.load_qasm(int_tree, path)?,
                 Command::Class => {
                     self.sym_update();
-                    println!("CReg: {}", self.sym.get_class().get())
+                    println!("CReg: {}", self.sym.get_class().get());
                 }
                 Command::Polar => {
                     self.sym_update();
@@ -164,15 +164,16 @@ impl<'t> Process<'t> {
                     self.sym_update();
                     println!("QReg probabilities: {:.4?}", self.sym.get_probabilities());
                 }
-                Command::Ops => println!("Operations: {}", self.int().get_ops_tree()),
-                Command::Names => {
-                    println!(
-                        "QReg: {}\nCReg: {}",
-                        self.int().get_q_alias(),
-                        self.int().get_c_alias()
-                    );
+                Command::Ops => {
+                    println!("Operations: {}", self.int().get_ops_tree());
                 }
-                Command::Help => println!("{}", lines::HELP),
+                Command::Names => {
+                    println!("QReg: {}", self.int().get_q_alias());
+                    println!("CReg: {}", self.int().get_c_alias());
+                }
+                Command::Help => {
+                    println!("{}", lines::HELP);
+                }
                 Command::Quit => return Ok(false),
             }
         }
@@ -187,7 +188,9 @@ impl<'t> Process<'t> {
     ) -> Result {
         use crate::int_tree::Command;
         match tag_cmd {
-            Command::List => println!("{:?}", int_tree.keys()),
+            Command::List => {
+                println!("{:?}", int_tree.keys());
+            }
             Command::Create(tag) => {
                 if !int_tree.commit(&tag, self.head.clone()) {
                     return Err(lines::Error::ExistedTagName(tag).into());
@@ -221,7 +224,9 @@ impl<'t> Process<'t> {
                     self.reset(Int::default());
                 }
             }
-            Command::Help => println!("{}", crate::int_tree::HELP),
+            Command::Help => {
+                println!("{}", crate::int_tree::HELP);
+            }
         }
         Ok(())
     }

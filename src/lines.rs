@@ -155,9 +155,4 @@ mod tests {
             Err(Error::UnknownCommand("a".to_string()))
         );
     }
-
-    #[test]
-    fn print_help() {
-        println!("{}", HELP);
-    }
 }

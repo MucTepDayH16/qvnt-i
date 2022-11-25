@@ -7,6 +7,9 @@ pub struct CliArgs {
     pub input: Option<PathBuf>,
     #[clap(short = 'H', long, help = "History path for interpreter commands")]
     pub history: Option<PathBuf>,
+    #[cfg(feature = "tracing")]
+    #[clap(short, long, help = "Logs file path")]
+    pub logs: Option<PathBuf>,
 }
 
 impl CliArgs {

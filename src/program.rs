@@ -71,24 +71,21 @@ pub struct Program<'t> {
     pub int_tree: IntTree<'t>,
 }
 
-fn decorate<E: Into<ProgramError>>(result: Result<bool, E>) -> Option<ProgramResult<()>> {
-    match result.map_err(Into::into) {
-        Ok(true) => None,
-        Ok(false) => Some(Ok(())),
-        Err(err) if err.is_fatal() => Some(Err(err)),
-        Err(err) => {
-            if cfg!(debug_assertions) {
-                eprintln!("{:?}", err);
-            } else if err.should_echo() {
-                eprintln!("{}", err);
-            }
-            None
-        }
-    }
-}
-
 impl<'t> Program<'t> {
-    pub fn new(cli: CliArgs) -> ProgramResult<Self> {
+    pub fn new() -> ProgramResult<Self> {
+        let cli = CliArgs::new();
+
+        #[cfg(feature = "tracing")]
+        if let Some(logs_path) = cli.logs {
+            let file = std::fs::File::create(logs_path).map_err(process::Error::Io)?;
+            env_logger::Builder::default()
+                .target(env_logger::Target::Pipe(Box::new(file)))
+                .filter(None, log::LevelFilter::Trace)
+                .filter(Some("rustyline"), log::LevelFilter::Info)
+                .parse_default_env()
+                .init();
+        }
+
         let history = if let Some(history) = cli.history {
             if !history.is_file() {
                 return Err(ProgramError::HistoryPath);
@@ -106,6 +103,7 @@ impl<'t> Program<'t> {
         let config = Config::builder()
             .max_history_size(1_000)
             .history_ignore_dups(true)
+            .auto_add_history(true)
             .check_cursor_position(true)
             .build();
 
@@ -120,7 +118,7 @@ impl<'t> Program<'t> {
 
     fn loop_fn(&mut self) -> ProgramResult<()> {
         if let Some(path) = self.input.take() {
-            if let Some(result) = decorate(
+            if let Some(result) = Self::decorate_error(
                 self.curr_process
                     .load_qasm(&mut self.int_tree, path)
                     .map(|_| true),
@@ -134,53 +132,81 @@ impl<'t> Program<'t> {
 
         let mut block = (false, String::new());
         loop {
-            match self.interact.readline(if block.0 { BLCK } else { SIGN }) {
-                Ok(line) => {
-                    self.interact.add_history_entry(&line);
-                    match line.chars().last() {
-                        Some('{') => {
-                            block.1 += &line;
-                            block.0 = true;
-                        }
-                        Some('}') if block.0 => {
-                            block.1 += &line;
-                            block.0 = false;
-                            let line = std::mem::take(&mut block.1);
-                            if let Some(result) =
-                                decorate(self.curr_process.process_qasm(line).map(|_| true))
-                            {
-                                return result;
-                            }
-                        }
-                        _ if block.0 => {
-                            block.1 += &line;
-                        }
-                        _ => {
-                            if let Some(result) =
-                                decorate(self.curr_process.process(&mut self.int_tree, line))
-                            {
-                                return result;
-                            }
-                        }
-                    }
-                }
-                Err(err) => {
-                    let err = Err(ProgramError::Readline(err));
-                    if let Some(err) = decorate(err) {
-                        return err;
-                    }
-                }
+            let maybe_result = match self.interact.readline(if block.0 { BLCK } else { SIGN }) {
+                Ok(line) => self.process_line(&mut block, line),
+                Err(err) => Self::decorate_error(Err(err)),
+            };
+
+            if let Some(result) = maybe_result {
+                return result;
             }
         }
     }
 
-    pub fn run(mut self) -> ProgramResult<()> {
-        const PROLOGUE: &str = "QVNT - Interactive QASM Interpreter\n\n";
-        print!("{}", PROLOGUE);
+    fn process_line(&mut self, block: &mut (bool, String), line: String) -> Option<ProgramResult> {
+        match line.chars().last() {
+            Some('{') => {
+                block.1 += &line;
+                block.0 = true;
+            }
+            Some('}') if block.0 => {
+                block.1 += &line;
+                block.0 = false;
+                let line = std::mem::take(&mut block.1);
+                if let Some(result) =
+                    Self::decorate_error(self.curr_process.process_qasm(line).map(|_| true))
+                {
+                    return Some(result);
+                }
+            }
+            _ if block.0 => {
+                block.1 += &line;
+            }
+            _ => {
+                if let Some(result) =
+                    Self::decorate_error(self.curr_process.process(&mut self.int_tree, line))
+                {
+                    return Some(result);
+                }
+            }
+        }
 
-        let _ = self.interact.load_history(&self.history);
+        None
+    }
+
+    fn decorate_error<E: Into<ProgramError>>(result: Result<bool, E>) -> Option<ProgramResult<()>> {
+        let ret = match result.map_err(Into::into) {
+            Ok(true) => None,
+            Ok(false) => Some(Ok(())),
+            Err(err) => {
+                log::error!(target: "qvnt_i::main", "{:?}", err);
+                if err.is_fatal() {
+                    Some(Err(err))
+                } else {
+                    if cfg!(debug_assertions) {
+                        eprintln!("{:?}", err);
+                    } else if err.should_echo() {
+                        eprintln!("{}", err);
+                    }
+                    None
+                }
+            }
+        };
+
+        ret
+    }
+
+    pub fn run(mut self) -> ProgramResult<()> {
+        const PROLOGUE: &str = "QVNT - Interactive QASM Interpreter";
+        print!("{}\n\n", PROLOGUE);
+
+        if let Err(err) = self.interact.load_history(&self.history) {
+            log::error!(target: "qvnt_i::main", "History not loaded: {}", err);
+        }
         let ret_code = self.loop_fn();
-        let _ = self.interact.save_history(&self.history);
+        if let Err(err) = self.interact.save_history(&self.history) {
+            log::error!(target: "qvnt_i::main", "History not saved: {}", err);
+        }
 
         ret_code
     }
@@ -188,14 +214,11 @@ impl<'t> Program<'t> {
 
 #[cfg(test)]
 mod tests {
-    use qvnt::prelude::Int;
-
-    use crate::{int_tree::IntTree, process::*};
+    use super::*;
 
     #[test]
     fn main_loop() {
-        let mut int_tree = IntTree::with_root(crate::program::ROOT_TAG);
-        let mut curr_process = Process::new(Int::default());
+        let mut program = Program::new().unwrap();
         let mut block = (false, String::new());
 
         let input = vec![
@@ -212,27 +235,10 @@ mod tests {
 
         for (line, expected_int) in input {
             let line = line.to_string();
-            match line.chars().last() {
-                Some('{') => {
-                    block.1 += &line;
-                    block.0 = true;
-                }
-                Some('}') if block.0 => {
-                    block.1 += &line;
-                    block.0 = false;
-                    curr_process.process_qasm(block.1).unwrap();
-                    block.1 = String::new();
-                }
-                _ if block.0 => {
-                    block.1 += &line;
-                }
-                _ => {
-                    curr_process.process(&mut int_tree, line).unwrap();
-                }
-            }
+            assert!(program.process_line(&mut block, line).is_none());
 
             assert_eq!(
-                format!("{:?}", curr_process.int()),
+                format!("{:?}", program.curr_process.int()),
                 expected_int.to_string()
             );
         }
