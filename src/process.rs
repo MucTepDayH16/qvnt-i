@@ -5,7 +5,7 @@ use qvnt::qasm::{Ast, Int, Sym};
 use crate::{
     int_tree::IntTree,
     lines::{self, Command, Line},
-    utils::{drop_leakage::leak_string, owned_errors, owned_errors::ToOwnedError},
+    utils::{drop_leakage, owned_errors, owned_errors::ToOwnedError},
 };
 
 #[derive(Debug)]
@@ -82,6 +82,17 @@ pub struct Process<'t> {
 }
 
 impl<'t> Process<'t> {
+    fn ast_from_string(source: String) -> Result<Ast<'t>> {
+        let source_leaked = drop_leakage::leak_string(source);
+        let ast = Ast::from_source(source_leaked).map_err(|err| {
+            unsafe {
+                drop_leakage::unleak_str(source_leaked);
+            }
+            err
+        })?;
+        Ok(ast)
+    }
+
     pub fn new(int: Int<'t>) -> Self {
         Self {
             head: Int::default(),
@@ -120,8 +131,7 @@ impl<'t> Process<'t> {
     }
 
     pub fn process_qasm(&mut self, line: String) -> Result {
-        let line = leak_string(line);
-        let ast = Ast::from_source(line)?;
+        let ast = Self::ast_from_string(line)?;
         self.int.ast_changes(&mut self.head, ast)?;
         Ok(())
     }
@@ -223,8 +233,7 @@ impl<'t> Process<'t> {
         } else {
             let default_ast = {
                 let source = std::fs::read_to_string(&path)?;
-                let source = leak_string(source);
-                Ast::from_source(source)?
+                Self::ast_from_string(source)?
             };
             let ast = self.storage.entry(path).or_insert(default_ast).clone();
             int_tree.checkout("");
