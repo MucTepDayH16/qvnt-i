@@ -35,6 +35,7 @@ where
         }
     }
 
+    /// *TODO*: Display as a tree
     pub fn keys(&self) -> Vec<(Rc<String>, Rc<String>)> {
         self.map
             .iter()
@@ -102,11 +103,7 @@ where
             return RemoveStatus::IsHead;
         }
 
-        let mut is_presented = false;
         for tags in self.map.iter() {
-            if **tags.0 == tag {
-                is_presented = true;
-            }
             if let Some(par_tag) = Weak::upgrade(&tags.1 .0) {
                 if *par_tag == tag {
                     return RemoveStatus::IsParent;
@@ -114,21 +111,14 @@ where
             }
         }
 
-        if !is_presented {
-            return RemoveStatus::NotFound;
+        if let Some((_, removed)) = self.map.remove(&tag) {
+            <Int<'t> as utils::drop_leakage::DropExt>::drop(removed);
+            log::trace!(target: "qvnt_i::tag::remove", "Tag {} removed", tag);
+    
+            RemoveStatus::Removed
+        } else {
+            RemoveStatus::NotFound
         }
-
-        let removed = self
-            .map
-            .remove(&tag)
-            .expect(
-                "if entry `tag` does not exist an error `RemoveStatus::NotFound` returnded; qed",
-            )
-            .1;
-        <Int<'t> as utils::drop_leakage::DropExt>::drop(removed);
-        log::trace!(target: "qvnt_i::tag::remove", "Tag {} removed", tag);
-
-        RemoveStatus::Removed
     }
 }
 

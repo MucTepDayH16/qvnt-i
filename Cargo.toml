@@ -20,6 +20,13 @@ home        = "0.5.4"
 log         = "0.4.17"
 env_logger  = { version = "0.10.0", optional = true }
 
+[profile.release]
+lto = true
+strip = true
+opt-level = "s"
+codegen-units = 1
+panic = "abort"
+
 [features]
 default     = []
 tracing     = ["env_logger"]
