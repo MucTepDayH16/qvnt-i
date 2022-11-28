@@ -5,7 +5,7 @@ use rustyline::{error::ReadlineError, Config, Editor};
 
 use crate::{
     cli::CliArgs,
-    int_tree::IntTree,
+    int_tree::Tree,
     process::{self, Process},
 };
 
@@ -68,7 +68,7 @@ pub struct Program<'t> {
     pub input: Option<PathBuf>,
     pub interact: Editor<()>,
     pub curr_process: Process<'t>,
-    pub int_tree: IntTree<'t>,
+    pub int_tree: Tree<Int<'t>>,
 }
 
 impl<'t> Program<'t> {
@@ -112,7 +112,7 @@ impl<'t> Program<'t> {
             input: cli.input,
             interact: Editor::with_config(config)?,
             curr_process: Process::new(Int::default()),
-            int_tree: IntTree::with_root(ROOT_TAG),
+            int_tree: Tree::with_root(ROOT_TAG),
         })
     }
 

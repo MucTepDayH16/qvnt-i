@@ -9,6 +9,7 @@ pub enum Error {
     ExistedTagName(String),
     TagIsParent(String),
     TagIsHead(String),
+    TagIsRoot,
     WrongTagName(String),
 }
 
@@ -22,6 +23,7 @@ impl fmt::Display for Error {
             Error::ExistedTagName(s) => write!(f, "Tag name {s:?} already exists"),
             Error::TagIsParent(s) => write!(f, "Tag {s:?} is parent and cannot be removed"),
             Error::TagIsHead(s) => write!(f, "Tag {s:?} is head and cannot be removed"),
+            Error::TagIsRoot => write!(f, "Root tag cannot be removed"),
             Error::WrongTagName(s) => write!(f, "There's no tag {s:?}"),
         }
     }

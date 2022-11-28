@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt, path::PathBuf};
 use qvnt::qasm::{Ast, Int, Sym};
 
 use crate::{
-    int_tree::IntTree,
+    int_tree::Tree,
     lines::{self, Command, Line},
     utils::{drop_leakage, owned_errors, owned_errors::ToOwnedError},
 };
@@ -81,6 +81,10 @@ pub struct Process<'t> {
     storage: HashMap<PathBuf, Ast<'t>>,
 }
 
+fn combine_int<'t>(int0: Int<'t>, int1: &Int<'t>) -> Int<'t> {
+    unsafe { int0.prepend_int(int1.clone()) }
+}
+
 impl<'t> Process<'t> {
     fn ast_from_string(source: String) -> Result<Ast<'t>> {
         let source_leaked = drop_leakage::leak_string(source);
@@ -123,7 +127,7 @@ impl<'t> Process<'t> {
         self.sym.finish();
     }
 
-    pub fn process(&mut self, int_set: &mut IntTree<'t>, line: String) -> Result<bool> {
+    pub fn process(&mut self, int_set: &mut Tree<Int<'t>>, line: String) -> Result<bool> {
         match line.parse::<Line>()? {
             Line::Qasm => self.process_qasm(line).map(|_| true),
             Line::Commands(cmds) => self.process_cmd(int_set, cmds.into_iter()),
@@ -138,7 +142,7 @@ impl<'t> Process<'t> {
 
     pub fn process_cmd(
         &mut self,
-        int_tree: &mut IntTree<'t>,
+        int_tree: &mut Tree<Int<'t>>,
         mut cmds: impl Iterator<Item = Command> + Clone,
     ) -> Result<bool> {
         while let Some(cmd) = cmds.next() {
@@ -183,13 +187,13 @@ impl<'t> Process<'t> {
 
     pub fn process_tag_cmd(
         &mut self,
-        int_tree: &mut IntTree<'t>,
+        int_tree: &mut Tree<Int<'t>>,
         tag_cmd: crate::int_tree::Command,
     ) -> Result {
         use crate::int_tree::Command;
         match tag_cmd {
             Command::List => {
-                println!("{:?}", int_tree.keys());
+                print!("{}", int_tree.display());
             }
             Command::Create(tag) => {
                 if !int_tree.commit(&tag, self.head.clone()) {
@@ -207,13 +211,16 @@ impl<'t> Process<'t> {
                     NotFound => return Err(lines::Error::WrongTagName(tag).into()),
                     IsParent => return Err(lines::Error::TagIsParent(tag).into()),
                     IsHead => return Err(lines::Error::TagIsHead(tag).into()),
+                    IsRoot => return Err(lines::Error::TagIsRoot.into()),
                 }
             }
             Command::Checkout(tag) => {
                 if !int_tree.checkout(&tag) {
                     return Err(lines::Error::WrongTagName(tag).into());
                 } else {
-                    let new_int = int_tree.collect_to_head().ok_or(Error::Inner)?;
+                    let new_int = int_tree
+                        .collect_to_head(Int::default, combine_int)
+                        .ok_or(Error::Inner)?;
                     self.reset(new_int);
                 }
             }
@@ -231,10 +238,14 @@ impl<'t> Process<'t> {
         Ok(())
     }
 
-    pub fn load_qasm(&mut self, int_tree: &mut IntTree<'t>, path: PathBuf) -> Result {
+    pub fn load_qasm(&mut self, int_tree: &mut Tree<Int<'t>>, path: PathBuf) -> Result {
         let path_tag = format!("file://{}", path.display());
         if int_tree.checkout(&path_tag) {
-            self.reset(int_tree.collect_to_head().ok_or(Error::Inner)?);
+            self.reset(
+                int_tree
+                    .collect_to_head(Int::default, combine_int)
+                    .ok_or(Error::Inner)?,
+            );
         } else {
             let default_ast = {
                 let source = std::fs::read_to_string(&path)?;

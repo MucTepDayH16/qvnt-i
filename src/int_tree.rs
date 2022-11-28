@@ -1,18 +1,17 @@
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    fmt,
-    rc::{Rc, Weak},
-};
-
-use qvnt::qasm::Int;
+use std::{cell::RefCell, collections::HashMap, fmt, mem::MaybeUninit, rc::Rc};
 
 use crate::utils;
 
 #[derive(Debug)]
-pub struct IntTree<'t> {
-    head: RefCell<Option<Rc<String>>>,
-    map: HashMap<Rc<String>, (Weak<String>, Int<'t>)>,
+pub enum TreeEntry<T> {
+    Root,
+    Leaf { value: T, parent: Rc<String> },
+}
+
+#[derive(Debug)]
+pub struct Tree<T: utils::drop_leakage::DropExt> {
+    head: RefCell<Rc<String>>,
+    map: HashMap<Rc<String>, TreeEntry<T>>,
 }
 
 pub enum RemoveStatus {
@@ -20,30 +19,53 @@ pub enum RemoveStatus {
     NotFound,
     IsParent,
     IsHead,
+    IsRoot,
 }
 
-impl<'t> IntTree<'t>
-where
-    Self: 't,
-{
+impl<T: utils::drop_leakage::DropExt> Tree<T> {
     pub fn with_root<S: ToString>(root: S) -> Self {
         let root = Rc::new(root.to_string());
-        let map = HashMap::from([(Rc::clone(&root), (Weak::new(), Int::default()))]);
+        let map = HashMap::from([(Rc::clone(&root), TreeEntry::Root)]);
         Self {
-            head: RefCell::new(Some(root)),
+            head: RefCell::new(Rc::clone(&root)),
             map,
         }
     }
 
-    /// *TODO*: Display as a tree
-    pub fn keys(&self) -> Vec<(Rc<String>, Rc<String>)> {
-        self.map
-            .iter()
-            .filter_map(|(a, (b, _))| Some((Rc::clone(a), Weak::upgrade(b)?)))
-            .collect()
+    pub fn display(&self) -> termtree::Tree<Rc<String>> {
+        let mut tree = HashMap::new();
+        let mut root = MaybeUninit::uninit();
+        for (leaf, leaf_entry) in &self.map {
+            if let TreeEntry::Leaf { parent, .. } = leaf_entry {
+                let children = tree
+                    .entry(Rc::clone(parent))
+                    .or_insert_with(|| Vec::with_capacity(2));
+                match children.binary_search(&leaf) {
+                    Ok(pos) | Err(pos) => {
+                        children.insert(pos, leaf);
+                    }
+                }
+            } else {
+                root.write(Rc::clone(leaf));
+            }
+        }
+
+        fn return_tree(
+            tree: &HashMap<Rc<String>, Vec<&Rc<String>>>,
+            tag: &Rc<String>,
+        ) -> termtree::Tree<Rc<String>> {
+            if let Some(children) = tree.get(tag) {
+                termtree::Tree::new(Rc::clone(tag))
+                    .with_leaves(children.iter().map(|c| return_tree(tree, c)))
+            } else {
+                termtree::Tree::new(Rc::clone(tag))
+            }
+        }
+
+        return_tree(&tree, &unsafe { root.assume_init() }).with_multiline(true)
     }
 
-    pub fn commit<S: AsRef<str>>(&mut self, tag: S, change: Int<'t>) -> bool {
+    pub fn commit<S: AsRef<str>>(&mut self, tag: S, change: T) -> bool {
         let tag = tag.as_ref().to_string();
 
         if self.map.contains_key(&tag) {
@@ -52,13 +74,15 @@ where
         }
 
         let tag = Rc::new(tag);
-        let old_head = match &*self.head.borrow() {
-            Some(rc) => Rc::downgrade(rc),
-            None => Weak::new(),
+        let old_head = {
+            TreeEntry::Leaf {
+                value: change,
+                parent: Rc::clone(&*self.head.borrow()),
+            }
         };
-        *self.head.borrow_mut() = Some(Rc::clone(&tag));
+        *self.head.borrow_mut() = Rc::clone(&tag);
         log::trace!(target: "qvnt_i::tag::commit", "Tag {} created", tag);
-        self.map.insert(tag, (old_head, change));
+        self.map.insert(tag, old_head);
 
         true
     }
@@ -68,7 +92,7 @@ where
 
         match self.map.get_key_value(&tag) {
             Some(entry) => {
-                *self.head.borrow_mut() = Some(Rc::clone(entry.0));
+                *self.head.borrow_mut() = Rc::clone(entry.0);
                 log::trace!(target: "qvnt_i::tag::checkout", "New head is on tag {}", tag);
                 true
             }
@@ -79,19 +103,23 @@ where
         }
     }
 
-    pub fn collect_to_head(&self) -> Option<Int<'t>> {
-        let mut start = Rc::clone(self.head.borrow().as_ref()?);
-        let mut int_changes = Int::<'t>::default();
+    pub fn collect_to_head(
+        &self,
+        init: impl FnOnce() -> T,
+        mut combine: impl FnMut(T, &T) -> T,
+    ) -> Option<T> {
+        let mut start = Rc::clone(&*self.head.borrow());
+        let mut changes = init();
 
         log::trace!(target: "qvnt_i::tag::collect", "Staring collection");
         loop {
             log::trace!(target: "qvnt_i::tag::collect", "Collection step to tag {}", start);
-            let curr = self.map.get(&start)?.clone();
-            int_changes = unsafe { int_changes.prepend_int(curr.1.clone()) };
-            if let Some(next) = Weak::upgrade(&curr.0) {
-                start = Rc::clone(&next);
-            } else {
-                break Some(int_changes);
+            match self.map.get(&start)? {
+                TreeEntry::Root => break Some(changes),
+                TreeEntry::Leaf { value, parent } => {
+                    changes = combine(changes, value);
+                    start = Rc::clone(parent);
+                }
             }
         }
     }
@@ -99,33 +127,39 @@ where
     pub fn remove<S: AsRef<str>>(&mut self, tag: S) -> RemoveStatus {
         let tag = tag.as_ref().to_string();
 
-        if self.head.borrow().as_deref() == Some(&tag) {
+        if **self.head.borrow() == tag {
             return RemoveStatus::IsHead;
         }
 
-        for tags in self.map.iter() {
-            if let Some(par_tag) = Weak::upgrade(&tags.1 .0) {
-                if *par_tag == tag {
-                    return RemoveStatus::IsParent;
-                }
+        for (_, entry) in self.map.iter() {
+            match entry {
+                TreeEntry::Leaf { parent, .. } if **parent == tag => return RemoveStatus::IsParent,
+                _ => {}
             }
         }
 
-        if let Some((_, removed)) = self.map.remove(&tag) {
-            <Int<'t> as utils::drop_leakage::DropExt>::drop(removed);
-            log::trace!(target: "qvnt_i::tag::remove", "Tag {} removed", tag);
-    
-            RemoveStatus::Removed
+        if let Some(entry) = self.map.remove(&tag) {
+            match entry {
+                TreeEntry::Root => RemoveStatus::IsRoot,
+                TreeEntry::Leaf { value, .. } => {
+                    T::drop(value);
+                    log::trace!(target: "qvnt_i::tag::remove", "Tag {} removed", tag);
+
+                    RemoveStatus::Removed
+                }
+            }
         } else {
             RemoveStatus::NotFound
         }
     }
 }
 
-impl<'t> Drop for IntTree<'t> {
+impl<T: utils::drop_leakage::DropExt> Drop for Tree<T> {
     fn drop(&mut self) {
-        for (_, (_, dropped)) in self.map.drain() {
-            <Int<'t> as utils::drop_leakage::DropExt>::drop(dropped);
+        for (_, entry) in self.map.drain() {
+            if let TreeEntry::Leaf { value, .. } = entry {
+                T::drop(value);
+            }
         }
     }
 }

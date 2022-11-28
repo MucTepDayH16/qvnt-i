@@ -19,11 +19,12 @@ meval       = "0.2.0"
 home        = "0.5.4"
 log         = "0.4.17"
 env_logger  = { version = "0.10.0", optional = true }
+termtree    = "0.4.0"
 
 [profile.release]
 lto = true
 strip = true
-opt-level = "s"
+# opt-level = "s"
 codegen-units = 1
 panic = "abort"
 
