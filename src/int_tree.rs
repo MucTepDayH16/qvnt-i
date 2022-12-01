@@ -32,17 +32,44 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
         }
     }
 
-    pub fn display(&self) -> termtree::Tree<Rc<String>> {
+    #[allow(dead_code)]
+    pub fn display_short(&self) -> termtree::Tree<Rc<String>> {
+        let head = &*self.head.borrow();
+        match self.map.get(head) {
+            Some(head_entry) => match head_entry {
+                TreeEntry::Root => termtree::Tree::new(Rc::clone(head)),
+                TreeEntry::Leaf {
+                    parent: head_parent,
+                    ..
+                } => {
+                    let mut siblings = termtree::Tree::new(Rc::clone(head_parent));
+                    siblings.extend(self.map.iter().filter_map(|(tag, entry)| match entry {
+                        TreeEntry::Leaf { parent, .. } if parent == head_parent => {
+                            Some(Rc::clone(tag))
+                        }
+                        _ => None,
+                    }));
+                    siblings
+                }
+            },
+            None => unsafe {
+                std::hint::unreachable_unchecked();
+            },
+        }
+        .with_multiline(true)
+    }
+
+    pub fn display(&self) -> termtree::Tree<String> {
         let mut tree = HashMap::new();
         let mut root = MaybeUninit::uninit();
         for (leaf, leaf_entry) in &self.map {
             if let TreeEntry::Leaf { parent, .. } = leaf_entry {
                 let children = tree
-                    .entry(Rc::clone(parent))
+                    .entry(parent.as_str())
                     .or_insert_with(|| Vec::with_capacity(2));
-                match children.binary_search(&leaf) {
+                match children.binary_search(&leaf.as_str()) {
                     Ok(pos) | Err(pos) => {
-                        children.insert(pos, leaf);
+                        children.insert(pos, leaf.as_str());
                     }
                 }
             } else {
@@ -50,19 +77,25 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
             }
         }
 
-        fn return_tree(
-            tree: &HashMap<Rc<String>, Vec<&Rc<String>>>,
-            tag: &Rc<String>,
-        ) -> termtree::Tree<Rc<String>> {
-            if let Some(children) = tree.get(tag) {
-                termtree::Tree::new(Rc::clone(tag))
-                    .with_leaves(children.iter().map(|c| return_tree(tree, c)))
+        fn return_tree<'s >(
+            tree: &HashMap<&'s str, Vec<&'s str>>,
+            tag: &'s str,
+            head: &'s str,
+        ) -> termtree::Tree<String> {
+            let tree_node = if tag == head {
+                format!("{} <-", tag)
             } else {
-                termtree::Tree::new(Rc::clone(tag))
+                tag.to_string()
+            };
+            if let Some(children) = tree.get(tag) {
+                termtree::Tree::new(tree_node)
+                    .with_leaves(children.iter().map(|c| return_tree(tree, c, head)))
+            } else {
+                termtree::Tree::new(tree_node)
             }
         }
 
-        return_tree(&tree, &unsafe { root.assume_init() }).with_multiline(true)
+        return_tree(&tree, &unsafe { root.assume_init() }, self.head.borrow().as_str()).with_multiline(true)
     }
 
     pub fn commit<S: AsRef<str>>(&mut self, tag: S, change: T) -> bool {

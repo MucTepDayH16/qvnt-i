@@ -65,7 +65,7 @@ impl ProgramError {
 
 pub struct Program<'t> {
     pub history: PathBuf,
-    pub input: Option<PathBuf>,
+    pub inputs: Vec<PathBuf>,
     pub interact: Editor<()>,
     pub curr_process: Process<'t>,
     pub int_tree: Tree<Int<'t>>,
@@ -109,7 +109,7 @@ impl<'t> Program<'t> {
 
         Ok(Self {
             history,
-            input: cli.input,
+            inputs: cli.inputs,
             interact: Editor::with_config(config)?,
             curr_process: Process::new(Int::default()),
             int_tree: Tree::with_root(ROOT_TAG),
@@ -117,10 +117,10 @@ impl<'t> Program<'t> {
     }
 
     fn loop_fn(&mut self) -> ProgramResult<()> {
-        if let Some(path) = self.input.take() {
+        for path in self.inputs.drain(..) {
             if let Some(result) = Self::decorate_error(
                 self.curr_process
-                    .load_qasm(&mut self.int_tree, path)
+                    .load_qasm(&mut self.int_tree, path, false)
                     .map(|_| true),
             ) {
                 result?;

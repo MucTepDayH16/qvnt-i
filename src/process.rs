@@ -5,7 +5,7 @@ use qvnt::qasm::{Ast, Int, Sym};
 use crate::{
     int_tree::Tree,
     lines::{self, Command, Line},
-    utils::{drop_leakage, owned_errors, owned_errors::ToOwnedError},
+    utils::{drop_leakage, owned_errors, owned_errors::ToOwnedError}, program::ROOT_TAG,
 };
 
 #[derive(Debug)]
@@ -155,7 +155,7 @@ impl<'t> Process<'t> {
                 }
                 Command::Tags(tag_cmd) => self.process_tag_cmd(int_tree, tag_cmd)?,
                 Command::Go => self.sym_go(),
-                Command::Load(path) => self.load_qasm(int_tree, path)?,
+                Command::Load(path) => self.load_qasm(int_tree, path, true)?,
                 Command::Class => {
                     self.sym_update();
                     println!("CReg: {}", self.sym.get_class().get());
@@ -238,27 +238,28 @@ impl<'t> Process<'t> {
         Ok(())
     }
 
-    pub fn load_qasm(&mut self, int_tree: &mut Tree<Int<'t>>, path: PathBuf) -> Result {
-        let path_tag = format!("file://{}", path.display());
-        if int_tree.checkout(&path_tag) {
-            self.reset(
-                int_tree
-                    .collect_to_head(Int::default, combine_int)
-                    .ok_or(Error::Inner)?,
-            );
-        } else {
-            let default_ast = {
-                let source = std::fs::read_to_string(&path)?;
-                Self::ast_from_string(source)?
-            };
-            let ast = self.storage.entry(path).or_insert(default_ast).clone();
-            int_tree.checkout("");
-            let int = Int::new(ast)?;
-            if !int_tree.commit(&path_tag, int.clone()) {
-                return Err(Error::Inner);
-            }
-            self.reset(int);
+    pub fn load_qasm(&mut self, int_tree: &mut Tree<Int<'t>>, path: PathBuf, switch_to: bool) -> Result {
+        let path_tag = format!("{}", path.display());
+
+        let ast = match self.storage.entry(path) {
+            std::collections::hash_map::Entry::Occupied(ast) => {
+                ast.get().clone()
+            },
+            std::collections::hash_map::Entry::Vacant(empty) => {
+                let source = std::fs::read_to_string(&empty.key())?;
+                let ast = Self::ast_from_string(source)?;
+                empty.insert(ast).clone()
+            },
+        };
+        
+        int_tree.checkout(ROOT_TAG);
+        if !int_tree.commit(&path_tag, Int::new(ast)?) {
+            return Err(Error::Inner);
         }
+        if !switch_to {
+            int_tree.checkout(ROOT_TAG);
+        }
+
         Ok(())
     }
 }
