@@ -10,8 +10,9 @@ pub enum TreeEntry<T> {
 
 #[derive(Debug)]
 pub struct Tree<T: utils::drop_leakage::DropExt> {
+    next_id: usize,
     head: RefCell<Rc<String>>,
-    map: HashMap<Rc<String>, TreeEntry<T>>,
+    map: HashMap<Rc<String>, (usize, TreeEntry<T>)>,
 }
 
 pub enum RemoveStatus {
@@ -25,8 +26,9 @@ pub enum RemoveStatus {
 impl<T: utils::drop_leakage::DropExt> Tree<T> {
     pub fn with_root<S: ToString>(root: S) -> Self {
         let root = Rc::new(root.to_string());
-        let map = HashMap::from([(Rc::clone(&root), TreeEntry::Root)]);
+        let map = HashMap::from([(Rc::clone(&root), (0, TreeEntry::Root))]);
         Self {
+            next_id: 1,
             head: RefCell::new(Rc::clone(&root)),
             map,
         }
@@ -36,14 +38,14 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
     pub fn display_short(&self) -> termtree::Tree<Rc<String>> {
         let head = &*self.head.borrow();
         match self.map.get(head) {
-            Some(head_entry) => match head_entry {
+            Some((_, head_entry)) => match head_entry {
                 TreeEntry::Root => termtree::Tree::new(Rc::clone(head)),
                 TreeEntry::Leaf {
                     parent: head_parent,
                     ..
                 } => {
                     let mut siblings = termtree::Tree::new(Rc::clone(head_parent));
-                    siblings.extend(self.map.iter().filter_map(|(tag, entry)| match entry {
+                    siblings.extend(self.map.iter().filter_map(|(tag, (_, entry))| match entry {
                         TreeEntry::Leaf { parent, .. } if parent == head_parent => {
                             Some(Rc::clone(tag))
                         }
@@ -62,14 +64,14 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
     pub fn display(&self) -> termtree::Tree<String> {
         let mut tree = HashMap::new();
         let mut root = MaybeUninit::uninit();
-        for (leaf, leaf_entry) in &self.map {
+        for (leaf, (leaf_id, leaf_entry)) in &self.map {
             if let TreeEntry::Leaf { parent, .. } = leaf_entry {
                 let children = tree
                     .entry(parent.as_str())
                     .or_insert_with(|| Vec::with_capacity(2));
-                match children.binary_search(&leaf.as_str()) {
+                match children.binary_search_by_key(leaf_id, |(id, _)| *id) {
                     Ok(pos) | Err(pos) => {
-                        children.insert(pos, leaf.as_str());
+                        children.insert(pos, (*leaf_id, leaf.as_str()));
                     }
                 }
             } else {
@@ -78,7 +80,7 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
         }
 
         fn return_tree<'s >(
-            tree: &HashMap<&'s str, Vec<&'s str>>,
+            tree: &HashMap<&'s str, Vec<(usize, &'s str)>>,
             tag: &'s str,
             head: &'s str,
         ) -> termtree::Tree<String> {
@@ -89,7 +91,7 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
             };
             if let Some(children) = tree.get(tag) {
                 termtree::Tree::new(tree_node)
-                    .with_leaves(children.iter().map(|c| return_tree(tree, c, head)))
+                    .with_leaves(children.iter().map(|(_, c)| return_tree(tree, c, head)))
             } else {
                 termtree::Tree::new(tree_node)
             }
@@ -115,7 +117,8 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
         };
         *self.head.borrow_mut() = Rc::clone(&tag);
         log::trace!(target: "qvnt_i::tag::commit", "Tag {} created", tag);
-        self.map.insert(tag, old_head);
+        self.map.insert(tag, (self.next_id, old_head));
+        self.next_id += 1;
 
         true
     }
@@ -147,7 +150,7 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
         log::trace!(target: "qvnt_i::tag::collect", "Staring collection");
         loop {
             log::trace!(target: "qvnt_i::tag::collect", "Collection step to tag {}", start);
-            match self.map.get(&start)? {
+            match &self.map.get(&start)?.1 {
                 TreeEntry::Root => break Some(changes),
                 TreeEntry::Leaf { value, parent } => {
                     changes = combine(changes, value);
@@ -164,14 +167,14 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
             return RemoveStatus::IsHead;
         }
 
-        for (_, entry) in self.map.iter() {
+        for (_, (_, entry)) in self.map.iter() {
             match entry {
                 TreeEntry::Leaf { parent, .. } if **parent == tag => return RemoveStatus::IsParent,
                 _ => {}
             }
         }
 
-        if let Some(entry) = self.map.remove(&tag) {
+        if let Some((_, entry)) = self.map.remove(&tag) {
             match entry {
                 TreeEntry::Root => RemoveStatus::IsRoot,
                 TreeEntry::Leaf { value, .. } => {
@@ -189,7 +192,7 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
 
 impl<T: utils::drop_leakage::DropExt> Drop for Tree<T> {
     fn drop(&mut self) {
-        for (_, entry) in self.map.drain() {
+        for (_, (_, entry)) in self.map.drain() {
             if let TreeEntry::Leaf { value, .. } = entry {
                 T::drop(value);
             }
