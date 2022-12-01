@@ -1,17 +1,18 @@
-use std::{cell::RefCell, collections::HashMap, fmt, mem::MaybeUninit, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt, rc::Rc};
 
 use crate::utils;
 
 #[derive(Debug)]
-pub enum TreeEntry<T> {
-    Root,
-    Leaf { value: T, parent: Rc<String> },
+pub struct TreeEntry<T> {
+    value: T,
+    parent: Rc<String>,
 }
 
 #[derive(Debug)]
 pub struct Tree<T: utils::drop_leakage::DropExt> {
     next_id: usize,
     head: RefCell<Rc<String>>,
+    root: Rc<String>,
     map: HashMap<Rc<String>, (usize, TreeEntry<T>)>,
 }
 
@@ -26,60 +27,30 @@ pub enum RemoveStatus {
 impl<T: utils::drop_leakage::DropExt> Tree<T> {
     pub fn with_root<S: ToString>(root: S) -> Self {
         let root = Rc::new(root.to_string());
-        let map = HashMap::from([(Rc::clone(&root), (0, TreeEntry::Root))]);
+        let map = HashMap::new();
         Self {
             next_id: 1,
             head: RefCell::new(Rc::clone(&root)),
+            root,
             map,
         }
     }
 
-    #[allow(dead_code)]
-    pub fn display_short(&self) -> termtree::Tree<Rc<String>> {
-        let head = &*self.head.borrow();
-        match self.map.get(head) {
-            Some((_, head_entry)) => match head_entry {
-                TreeEntry::Root => termtree::Tree::new(Rc::clone(head)),
-                TreeEntry::Leaf {
-                    parent: head_parent,
-                    ..
-                } => {
-                    let mut siblings = termtree::Tree::new(Rc::clone(head_parent));
-                    siblings.extend(self.map.iter().filter_map(|(tag, (_, entry))| match entry {
-                        TreeEntry::Leaf { parent, .. } if parent == head_parent => {
-                            Some(Rc::clone(tag))
-                        }
-                        _ => None,
-                    }));
-                    siblings
-                }
-            },
-            None => unsafe {
-                std::hint::unreachable_unchecked();
-            },
-        }
-        .with_multiline(true)
-    }
-
     pub fn display(&self) -> termtree::Tree<String> {
         let mut tree = HashMap::new();
-        let mut root = MaybeUninit::uninit();
         for (leaf, (leaf_id, leaf_entry)) in &self.map {
-            if let TreeEntry::Leaf { parent, .. } = leaf_entry {
-                let children = tree
-                    .entry(parent.as_str())
-                    .or_insert_with(|| Vec::with_capacity(2));
-                match children.binary_search_by_key(leaf_id, |(id, _)| *id) {
-                    Ok(pos) | Err(pos) => {
-                        children.insert(pos, (*leaf_id, leaf.as_str()));
-                    }
+            let TreeEntry { parent, .. } = leaf_entry;
+            let children = tree
+                .entry(parent.as_str())
+                .or_insert_with(|| Vec::with_capacity(2));
+            match children.binary_search_by_key(leaf_id, |(id, _)| *id) {
+                Ok(pos) | Err(pos) => {
+                    children.insert(pos, (*leaf_id, leaf.as_str()));
                 }
-            } else {
-                root.write(Rc::clone(leaf));
             }
         }
 
-        fn return_tree<'s >(
+        fn return_tree<'s>(
             tree: &HashMap<&'s str, Vec<(usize, &'s str)>>,
             tag: &'s str,
             head: &'s str,
@@ -97,7 +68,7 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
             }
         }
 
-        return_tree(&tree, &unsafe { root.assume_init() }, self.head.borrow().as_str()).with_multiline(true)
+        return_tree(&tree, self.root.as_str(), self.head.borrow().as_str()).with_multiline(true)
     }
 
     pub fn commit<S: AsRef<str>>(&mut self, tag: S, change: T) -> bool {
@@ -108,31 +79,38 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
             return false;
         }
 
-        let tag = Rc::new(tag);
-        let old_head = {
-            TreeEntry::Leaf {
-                value: change,
-                parent: Rc::clone(&*self.head.borrow()),
-            }
-        };
-        *self.head.borrow_mut() = Rc::clone(&tag);
         log::trace!(target: "qvnt_i::tag::commit", "Tag {} created", tag);
+        let tag = Rc::new(tag);
+        let old_head = TreeEntry {
+            value: change,
+            parent: std::mem::replace(&mut *self.head.borrow_mut(), Rc::clone(&tag)),
+        };
         self.map.insert(tag, (self.next_id, old_head));
         self.next_id += 1;
 
         true
     }
 
+    pub fn checkout_root(&self) {
+        *self.head.borrow_mut() = Rc::clone(&self.root);
+        log::trace!(target: "qvnt_i::tag::checkout", "New head is on root");
+    }
+
     pub fn checkout<S: AsRef<str>>(&self, tag: S) -> bool {
         let tag = tag.as_ref().to_string();
 
-        match self.map.get_key_value(&tag) {
+        match self
+            .map
+            .get_key_value(&tag)
+            .map(|(entry, _)| entry)
+            .or_else(|| (**self.root == tag).then_some(&self.root))
+        {
             Some(entry) => {
-                *self.head.borrow_mut() = Rc::clone(entry.0);
+                *self.head.borrow_mut() = Rc::clone(entry);
                 log::trace!(target: "qvnt_i::tag::checkout", "New head is on tag {}", tag);
                 true
             }
-            None => {
+            _ => {
                 log::trace!(target: "qvnt_i::tag::checkout", "Tag {} doesn't exist", tag);
                 false
             }
@@ -150,12 +128,13 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
         log::trace!(target: "qvnt_i::tag::collect", "Staring collection");
         loop {
             log::trace!(target: "qvnt_i::tag::collect", "Collection step to tag {}", start);
-            match &self.map.get(&start)?.1 {
-                TreeEntry::Root => break Some(changes),
-                TreeEntry::Leaf { value, parent } => {
-                    changes = combine(changes, value);
-                    start = Rc::clone(parent);
-                }
+            if start == self.root {
+                break Some(changes);
+            } else {
+                let TreeEntry { value, parent } = &self.map.get(&start)?.1;
+
+                changes = combine(changes, value);
+                start = Rc::clone(parent);
             }
         }
     }
@@ -167,23 +146,22 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
             return RemoveStatus::IsHead;
         }
 
+        if **self.root == tag {
+            return RemoveStatus::IsRoot;
+        }
+
         for (_, (_, entry)) in self.map.iter() {
-            match entry {
-                TreeEntry::Leaf { parent, .. } if **parent == tag => return RemoveStatus::IsParent,
-                _ => {}
+            if **entry.parent == tag {
+                return RemoveStatus::IsParent;
             }
         }
 
         if let Some((_, entry)) = self.map.remove(&tag) {
-            match entry {
-                TreeEntry::Root => RemoveStatus::IsRoot,
-                TreeEntry::Leaf { value, .. } => {
-                    T::drop(value);
-                    log::trace!(target: "qvnt_i::tag::remove", "Tag {} removed", tag);
+            let TreeEntry { value, .. } = entry;
+            T::drop(value);
+            log::trace!(target: "qvnt_i::tag::remove", "Tag {} removed", tag);
 
-                    RemoveStatus::Removed
-                }
-            }
+            RemoveStatus::Removed
         } else {
             RemoveStatus::NotFound
         }
@@ -193,9 +171,8 @@ impl<T: utils::drop_leakage::DropExt> Tree<T> {
 impl<T: utils::drop_leakage::DropExt> Drop for Tree<T> {
     fn drop(&mut self) {
         for (_, (_, entry)) in self.map.drain() {
-            if let TreeEntry::Leaf { value, .. } = entry {
-                T::drop(value);
-            }
+            let TreeEntry { value, .. } = entry;
+            T::drop(value);
         }
     }
 }

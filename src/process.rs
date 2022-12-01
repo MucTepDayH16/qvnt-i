@@ -5,7 +5,7 @@ use qvnt::qasm::{Ast, Int, Sym};
 use crate::{
     int_tree::Tree,
     lines::{self, Command, Line},
-    utils::{drop_leakage, owned_errors, owned_errors::ToOwnedError}, program::ROOT_TAG,
+    utils::{drop_leakage, owned_errors, owned_errors::ToOwnedError},
 };
 
 #[derive(Debug)]
@@ -225,11 +225,8 @@ impl<'t> Process<'t> {
                 }
             }
             Command::Root => {
-                if !int_tree.checkout(crate::program::ROOT_TAG) {
-                    return Err(Error::Inner);
-                } else {
-                    self.reset(Int::default());
-                }
+                int_tree.checkout_root();
+                self.reset(Int::default());
             }
             Command::Help => {
                 println!("{}", crate::int_tree::HELP);
@@ -238,26 +235,29 @@ impl<'t> Process<'t> {
         Ok(())
     }
 
-    pub fn load_qasm(&mut self, int_tree: &mut Tree<Int<'t>>, path: PathBuf, switch_to: bool) -> Result {
+    pub fn load_qasm(
+        &mut self,
+        int_tree: &mut Tree<Int<'t>>,
+        path: PathBuf,
+        switch_to: bool,
+    ) -> Result {
         let path_tag = format!("{}", path.display());
 
         let ast = match self.storage.entry(path) {
-            std::collections::hash_map::Entry::Occupied(ast) => {
-                ast.get().clone()
-            },
+            std::collections::hash_map::Entry::Occupied(ast) => ast.get().clone(),
             std::collections::hash_map::Entry::Vacant(empty) => {
-                let source = std::fs::read_to_string(&empty.key())?;
+                let source = std::fs::read_to_string(empty.key())?;
                 let ast = Self::ast_from_string(source)?;
                 empty.insert(ast).clone()
-            },
+            }
         };
-        
-        int_tree.checkout(ROOT_TAG);
+
+        int_tree.checkout_root();
         if !int_tree.commit(&path_tag, Int::new(ast)?) {
             return Err(Error::Inner);
         }
         if !switch_to {
-            int_tree.checkout(ROOT_TAG);
+            int_tree.checkout_root();
         }
 
         Ok(())
