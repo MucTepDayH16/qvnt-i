@@ -1,7 +1,7 @@
 use std::{fmt, path::PathBuf};
 
 use qvnt::prelude::Int;
-use rustyline::{error::ReadlineError, Config, Editor};
+use rustyline::{error::ReadlineError, Config, Editor, history::FileHistory};
 
 use crate::{
     cli::CliArgs,
@@ -66,7 +66,7 @@ impl ProgramError {
 pub struct Program<'t> {
     pub history: PathBuf,
     pub inputs: Vec<PathBuf>,
-    pub interact: Editor<()>,
+    pub interact: Editor<(), FileHistory>,
     pub curr_process: Process<'t>,
     pub int_tree: Tree<Int<'t>>,
 }
@@ -76,7 +76,7 @@ impl<'t> Program<'t> {
         let cli = CliArgs::new();
 
         #[cfg(feature = "tracing")]
-        if let Some(logs_path) = cli.logs {
+        if let Some(logs_path) = cli.logs_enabled {
             let file = std::fs::File::create(logs_path).map_err(process::Error::Io)?;
             env_logger::Builder::default()
                 .target(env_logger::Target::Pipe(Box::new(file)))
@@ -101,8 +101,8 @@ impl<'t> Program<'t> {
         };
 
         let config = Config::builder()
-            .max_history_size(1_000)
-            .history_ignore_dups(true)
+            .max_history_size(1_000)?
+            .history_ignore_dups(true)?
             .auto_add_history(true)
             .check_cursor_position(true)
             .build();

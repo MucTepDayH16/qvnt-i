@@ -12,9 +12,9 @@ readme      = "README.md"
 license     = "GPL-3.0-or-later"
 
 [dependencies]
-clap        = { version = "4.0.26", features = ["derive"] }
-rustyline   = "10.0.0"
-qvnt        = { git = "https://github.com/MucTepDayH16/qvnt.git", features = ["multi-thread", "interpreter"] }
+clap        = { version = "4.1.8", features = ["derive"] }
+rustyline   = "11.0.0"
+qvnt        = { version = "0.4.4", features = ["multi-thread", "interpreter"] }
 meval       = "0.2.0"
 home        = "0.5.4"
 log         = "0.4.17"
@@ -24,7 +24,7 @@ termtree    = "0.4.0"
 [profile.release]
 lto = true
 strip = true
-# opt-level = "s"
+opt-level = 3
 codegen-units = 1
 panic = "abort"
 
